@@ -14,7 +14,7 @@ const TallyStockDashboard = () => {
   const [expandedCategories, setExpandedCategories] = useState({})
   const [parsingIssues, setParsingIssues] = useState([])
 
-  const API_BASE = "http://localhost:8000/api/tally"
+  const API_BASE = "https://invoice-56iv.onrender.com/api/tally"
 
   const checkConnection = async () => {
     try {

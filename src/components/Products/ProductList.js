@@ -6,7 +6,7 @@ const ProductList = () => {
 
   useEffect(() => {
     async function fetchProducts() {
-      const response = await axios.get('http://localhost:8000/api/products');
+      const response = await axios.get('https://invoice-56iv.onrender.com/api/products');
       setProducts(response.data.products);
     }
     fetchProducts();
@@ -14,7 +14,7 @@ const ProductList = () => {
 
   const handleDelete = async (id) => {
     try {
-      await axios.delete(`http://localhost:8000/api/products/${id}`);
+      await axios.delete(`https://invoice-56iv.onrender.com/api/products/${id}`);
       alert('Product deleted');
       setProducts(products.filter((product) => product._id !== id));
     } catch (error) {

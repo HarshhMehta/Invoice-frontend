@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API = axios.create({ baseURL: 'http://localhost:8000'})
+const API = axios.create({ baseURL: 'https://invoice-56iv.onrender.com'})
 // const API = axios.create({ baseURL: process.env.REACT_APP_API})
 
 API.interceptors.request.use((req) => {
