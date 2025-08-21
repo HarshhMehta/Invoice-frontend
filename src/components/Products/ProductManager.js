@@ -12,7 +12,7 @@ const TallyStockDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("")
   const [expandedGroups, setExpandedGroups] = useState({})
   const [expandedCategories, setExpandedCategories] = useState({})
-  const [parsingIssues, setParsingIssues] = useState([])
+
 
   const API_BASE = "https://invoice-56iv.onrender.com/api/tally"
 
@@ -28,169 +28,86 @@ const TallyStockDashboard = () => {
     }
   }
 
-  // Enhanced price parsing function - try multiple rate fields
-  const parsePrice = (item, itemName, fieldType) => {
-    const issues = []
+  // Simple price parsing function
+  const parsePrice = (item, fieldType) => {
     let value = 0
     let unit = "Pcs"
-    let fieldUsed = 'none'
     
-    try {
-      // Try multiple fields in priority order for current rates
-      const priceFields = fieldType === 'price' 
-        ? ['RATE', 'SALESRATE', 'LISTPRICE', 'STANDARDPRICE', 'BASICRATE', 'PRICE', 'MRP']
-        : ['STANDARDCOST', 'PURCHASERATE', 'COST', 'AVGCOST', 'LASTPURCHASERATE']
-      
-      let priceData = null
-      
-      // Find the first available price field
-      for (const field of priceFields) {
-        if (item[field] !== undefined && item[field] !== null && item[field] !== '') {
-          priceData = item[field]
-          fieldUsed = field
-          break
-        }
+    // Try multiple fields in priority order
+    const priceFields = fieldType === 'price' 
+      ? ['RATE', 'SALESRATE', 'LISTPRICE', 'STANDARDPRICE', 'BASICRATE', 'PRICE', 'MRP']
+      : ['STANDARDCOST', 'PURCHASERATE', 'COST', 'AVGCOST', 'LASTPURCHASERATE']
+    
+    let priceData = null
+    
+    // Find the first available price field
+    for (const field of priceFields) {
+      if (item[field] !== undefined && item[field] !== null && item[field] !== '') {
+        priceData = item[field]
+        break
       }
+    }
+    
+    if (!priceData) {
+      return { value: 0, unit: "Pcs" }
+    }
+    
+    // Handle nested structure like {_: "149.00/Pcs", TYPE: "Rate"}
+    if (typeof priceData === 'object' && priceData !== null) {
+      let priceStr = priceData._ || priceData.VALUE || priceData.AMOUNT || priceData.RATE
       
-      if (!priceData) {
-        // Log all available fields for debugging
-        console.log(`No ${fieldType} field found for "${itemName}". Available fields:`, Object.keys(item))
-        issues.push(`No ${fieldType} field found. Checked: ${priceFields.join(', ')}`)
-        return { value: 0, unit: "Pcs", issues, fieldUsed: 'none' }
-      }
-      
-      console.log(`Using ${fieldUsed} for ${itemName} ${fieldType}:`, JSON.stringify(priceData, null, 2))
-      
-      // Handle nested structure like {_: "149.00/Pcs", TYPE: "Rate"}
-      if (typeof priceData === 'object' && priceData !== null) {
-        let priceStr = null
-        
-        // Try different nested properties
-        if (priceData._) {
-          priceStr = priceData._
-        } else if (priceData.VALUE) {
-          priceStr = priceData.VALUE
-        } else if (priceData.AMOUNT) {
-          priceStr = priceData.AMOUNT
-        } else if (priceData.RATE) {
-          priceStr = priceData.RATE
-        } else {
-          // If it's an object but no recognized property, try to stringify and parse
-          const objStr = JSON.stringify(priceData)
-          console.log(`Unknown object structure for ${fieldUsed}:`, objStr)
-          issues.push(`Unknown object structure for ${fieldUsed}: ${objStr}`)
-          return { value: 0, unit: "Pcs", issues, fieldUsed }
-        }
-        
-        console.log(`Parsing ${fieldType} for "${itemName}": "${priceStr}" from field: ${fieldUsed}`)
-        
-        // Extract price and unit from formats like "149.00/Pcs", "150.50/Kg", "45/Box"
-        if (typeof priceStr === 'string') {
-          const priceUnitMatch = priceStr.match(/^([\d.,]+)\s*\/\s*([A-Za-z]+)$/)
-          if (priceUnitMatch) {
-            value = parseFloat(priceUnitMatch[1].replace(/,/g, ''))
-            unit = priceUnitMatch[2]
-          } else {
-            // Try to extract just the numeric value
-            const numericMatch = priceStr.match(/([\d.,]+)/)
-            if (numericMatch) {
-              value = parseFloat(numericMatch[1].replace(/,/g, ''))
-              // Try to guess unit from the string
-              const unitMatch = priceStr.match(/\/([A-Za-z]+)/)
-              if (unitMatch) {
-                unit = unitMatch[1]
-              }
-            } else {
-              issues.push(`Could not parse ${fieldType} from ${fieldUsed}: "${priceStr}"`)
-            }
-          }
-        } else if (typeof priceStr === 'number') {
-          value = priceStr
-        }
-      }
-      // Handle direct numeric values
-      else if (typeof priceData === 'number') {
-        value = priceData
-        console.log(`Direct numeric value for ${itemName} ${fieldType}: ${value}`)
-      }
-      // Handle string numeric values
-      else if (typeof priceData === 'string') {
-        console.log(`String value for ${itemName} ${fieldType}: "${priceData}"`)
-        
-        // Handle formats like "149.00/Pcs", "150.50/Kg", "45/Box"
-        const priceUnitMatch = priceData.match(/^([\d.,]+)\s*\/\s*([A-Za-z]+)$/)
+      if (typeof priceStr === 'string') {
+        const priceUnitMatch = priceStr.match(/^([\d.,]+)\s*\/\s*([A-Za-z]+)$/)
         if (priceUnitMatch) {
           value = parseFloat(priceUnitMatch[1].replace(/,/g, ''))
           unit = priceUnitMatch[2]
         } else {
-          // Try to extract just the numeric value
-          const numericMatch = priceData.match(/([\d.,]+)/)
+          const numericMatch = priceStr.match(/([\d.,]+)/)
           if (numericMatch) {
             value = parseFloat(numericMatch[1].replace(/,/g, ''))
-          } else {
-            issues.push(`Could not parse ${fieldType} from ${fieldUsed}: "${priceData}"`)
           }
         }
+      } else if (typeof priceStr === 'number') {
+        value = priceStr
       }
-      
-      if (isNaN(value)) {
-        value = 0
-        issues.push(`${fieldType} from ${fieldUsed} resulted in NaN`)
+    }
+    // Handle direct numeric values
+    else if (typeof priceData === 'number') {
+      value = priceData
+    }
+    // Handle string numeric values
+    else if (typeof priceData === 'string') {
+      const priceUnitMatch = priceData.match(/^([\d.,]+)\s*\/\s*([A-Za-z]+)$/)
+      if (priceUnitMatch) {
+        value = parseFloat(priceUnitMatch[1].replace(/,/g, ''))
+        unit = priceUnitMatch[2]
+      } else {
+        const numericMatch = priceData.match(/([\d.,]+)/)
+        if (numericMatch) {
+          value = parseFloat(numericMatch[1].replace(/,/g, ''))
+        }
       }
-      
-      console.log(`Final parsed ${fieldType} for "${itemName}": ${value} ${unit} (from ${fieldUsed})`)
-      
-    } catch (err) {
-      console.error(`Error parsing ${fieldType} for "${itemName}":`, err)
-      issues.push(`Parse error for ${fieldType}: ${err.message}`)
-      fieldUsed = 'error'
     }
     
-    return { value, unit, issues, fieldUsed }
+    if (isNaN(value)) {
+      value = 0
+    }
+    
+    return { value, unit }
   }
 
-  // Improved unit detection
+  // Simple unit detection
   const detectUnit = (item) => {
-    // Priority order: parsed unit from price > baseUnits > item name analysis > default
-    
-    // Check if we have a unit from price parsing
+    // Priority order: parsed unit from price > baseUnits > default
     if (item.priceUnit && item.priceUnit !== "Pcs") {
       return item.priceUnit
     }
     
-    // Check baseUnits
     if (item.baseUnits && item.baseUnits !== "Pcs") {
       return item.baseUnits
     }
     
-    // Analyze item name for unit hints
-    const itemName = (item.name || "").toLowerCase()
-    
-    // Common unit patterns in item names
-    const unitPatterns = [
-      { pattern: /\bkg\b|\bkilogram\b/, unit: "Kg" },
-      { pattern: /\bltr\b|\blitre\b|\bliter\b/, unit: "Ltr" },
-      { pattern: /\bmtr\b|\bmeter\b|\bmetre\b/, unit: "Mtr" },
-      { pattern: /\bft\b|\bfeet\b|\bfoot\b/, unit: "Ft" },
-      { pattern: /\binch\b|\bin\b/, unit: "Inch" },
-      { pattern: /\bmm\b|\bmillimeter\b/, unit: "MM" },
-      { pattern: /\bcm\b|\bcentimeter\b/, unit: "CM" },
-      { pattern: /\bbox\b|\bcarton\b/, unit: "Box" },
-      { pattern: /\broll\b/, unit: "Roll" },
-      { pattern: /\bsheet\b/, unit: "Sheet" },
-      { pattern: /\bpair\b/, unit: "Pair" },
-      { pattern: /\bset\b/, unit: "Set" },
-      { pattern: /\bbag\b/, unit: "Bag" },
-      { pattern: /\bpack\b|\bpacket\b/, unit: "Pack" }
-    ]
-    
-    for (const { pattern, unit } of unitPatterns) {
-      if (pattern.test(itemName)) {
-        return unit
-      }
-    }
-    
-    return "Pcs" // Default fallback
+    return "Pcs"
   }
 
   const groupStockData = (data) => {
@@ -263,25 +180,10 @@ const TallyStockDashboard = () => {
   const fetchStockRates = async () => {
     setLoading(true)
     setError("")
-    setParsingIssues([])
     
     try {
-      // Add parameters to fetch current/today's data
-      const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD format
-      const params = new URLSearchParams({
-        date: today,
-        refresh: 'true',
-        includeRates: 'true',
-        priceList: 'current', // or 'standard', 'retail', etc.
-        timestamp: Date.now().toString() // Prevent caching
-      })
-      
-      const response = await fetch(`${API_BASE}/stock-rates?${params}`, {
-        method: 'GET',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+      const response = await fetch(`${API_BASE}/stock-rates`, {
+        method: 'GET'
       })
 
       if (!response.ok) {
@@ -290,130 +192,70 @@ const TallyStockDashboard = () => {
       }
 
       const result = await response.json()
-      console.log("Full API Response:", JSON.stringify(result, null, 2))
-
       setIsConnected(true)
 
       // Try different possible response structures
       let stockItems = null
       
-      // Structure 1: result.success && result.data && result.data.stockItems
       if (result.success && result.data && result.data.stockItems) {
         stockItems = result.data.stockItems
-        console.log("Using structure 1: result.data.stockItems")
       }
-      // Structure 2: Tally ENVELOPE structure (most likely based on your data)
       else if (result.success && result.data && result.data.data && result.data.data.ENVELOPE) {
         const envelope = result.data.data.ENVELOPE
         if (envelope.BODY && envelope.BODY.DATA && envelope.BODY.DATA.COLLECTION && envelope.BODY.DATA.COLLECTION.STOCKITEM) {
           stockItems = envelope.BODY.DATA.COLLECTION.STOCKITEM
-          console.log("Using structure 2: Tally ENVELOPE.BODY.DATA.COLLECTION.STOCKITEM structure")
         } else if (envelope.BODY && envelope.BODY.DATA && envelope.BODY.DATA.COLLECTION) {
           stockItems = envelope.BODY.DATA.COLLECTION
-          console.log("Using structure 2a: Tally ENVELOPE.BODY.DATA.COLLECTION structure")
         } else if (envelope.DATA && Array.isArray(envelope.DATA)) {
           stockItems = envelope.DATA
-          console.log("Using structure 2b: ENVELOPE.DATA array")
         }
       }
-      // Structure 3: Direct array in result.data
       else if (result.success && result.data && Array.isArray(result.data)) {
         stockItems = result.data
-        console.log("Using structure 3: Direct array in result.data")
       }
-      // Structure 4: result.stockItems directly
       else if (result.stockItems && Array.isArray(result.stockItems)) {
         stockItems = result.stockItems
-        console.log("Using structure 4: result.stockItems")
       }
-      // Structure 5: result is direct array
       else if (Array.isArray(result)) {
         stockItems = result
-        console.log("Using structure 5: result is direct array")
       }
 
-      console.log("Extracted stockItems:", stockItems)
-
       if (stockItems && Array.isArray(stockItems) && stockItems.length > 0) {
-        const allParsingIssues = []
-        
-        // Transform the data to match our component structure
+        // Transform the data
         const transformedData = stockItems.map((item, index) => {
-          console.log(`Processing item ${index}:`, JSON.stringify(item, null, 2))
-          
           const itemName = item.NAME || item.name || item.DSPDISPNAME || item.particulars || `Item ${index + 1}`
-          
-          // Handle BASEUNITS
           const baseUnits = item.BASEUNITS?._ || item.BASEUNITS || item.baseUnits || item.UNIT || item.unit || "Pcs"
           
-          // Parse prices with enhanced field detection
-          const priceResult = parsePrice(item, itemName, 'price')
-          const costResult = parsePrice(item, itemName, 'cost')
-          
-          // Collect parsing issues
-          const itemIssues = [...priceResult.issues, ...costResult.issues]
-          if (itemIssues.length > 0) {
-            allParsingIssues.push({
-              itemName,
-              index,
-              issues: itemIssues
-            })
-          }
+          // Parse prices
+          const priceResult = parsePrice(item, 'price')
           
           const transformedItem = {
             name: itemName,
             baseUnits: baseUnits,
             standardPrice: priceResult.value,
-            standardCost: costResult.value,
             priceUnit: priceResult.unit,
-            costUnit: costResult.unit,
-            priceFieldUsed: priceResult.fieldUsed,
-            costFieldUsed: costResult.fieldUsed,
-            index: index,
-            rawPriceData: item[priceResult.fieldUsed] || item.STANDARDPRICE,
-            rawCostData: item[costResult.fieldUsed] || item.STANDARDCOST,
-            allFields: Object.keys(item), // Debug: show all available fields
-            originalItem: item // Debug: keep original for inspection
+            index: index
           }
           
           // Detect the best unit to use
           transformedItem.displayUnit = detectUnit(transformedItem)
           
-          console.log(`Transformed item ${index} "${itemName}":`, {
-            standardPrice: transformedItem.standardPrice,
-            standardCost: transformedItem.standardCost,
-            priceFieldUsed: transformedItem.priceFieldUsed,
-            costFieldUsed: transformedItem.costFieldUsed,
-            priceUnit: transformedItem.priceUnit,
-            displayUnit: transformedItem.displayUnit
-          })
-          
           return transformedItem
         })
-
-        console.log("Transformed data:", transformedData)
-        console.log("Parsing issues:", allParsingIssues)
 
         setStockData(transformedData)
         setFilteredData(transformedData)
         setGroupedData(groupStockData(transformedData))
-        setParsingIssues(allParsingIssues)
         setLastUpdated(new Date().toLocaleString())
         setError("")
       } else {
-        console.error("No valid stock items found in response")
-        console.error("Available keys in result:", Object.keys(result))
-        if (result.data) {
-          console.error("Available keys in result.data:", Object.keys(result.data))
-        }
-        setError(`Failed to fetch stock rates: No stock items found. Response structure: ${JSON.stringify(Object.keys(result), null, 2)}`)
+        setError("No stock items found in response")
         setStockData([])
         setFilteredData([])
         setGroupedData({})
       }
     } catch (err) {
       setIsConnected(false)
-      console.error("Fetch error:", err)
       setError(`Error fetching stock rates: ${err.message}`)
       setStockData([])
       setFilteredData([])
@@ -455,17 +297,6 @@ const TallyStockDashboard = () => {
       return "0.00"
     }
     return numValue.toFixed(2)
-  }
-
-  const formatNumber = (value) => {
-    if (value === null || value === undefined || value === "") {
-      return ""
-    }
-    const numValue = Number.parseFloat(value)
-    if (isNaN(numValue)) {
-      return String(value)
-    }
-    return numValue.toString()
   }
 
   const getUnit = (item) => {
@@ -527,12 +358,6 @@ const TallyStockDashboard = () => {
                 </span>
               </div>
               {lastUpdated && <span className="text-xs text-gray-500">Updated: {lastUpdated}</span>}
-              {parsingIssues.length > 0 && (
-                <div className="flex items-center space-x-1 text-amber-600">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="text-xs">{parsingIssues.length} parsing issues</span>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center space-x-3">
@@ -581,28 +406,6 @@ const TallyStockDashboard = () => {
           </div>
         )}
 
-        {/* Parsing Issues Warning */}
-        {parsingIssues.length > 0 && (
-          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-start space-x-2 text-amber-800 text-sm">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <div>
-                <span className="font-medium">Price Parsing Issues ({parsingIssues.length} items):</span>
-                <div className="mt-1 text-xs max-h-20 overflow-y-auto">
-                  {parsingIssues.slice(0, 3).map((issue, idx) => (
-                    <div key={idx} className="mb-1">
-                      <strong>{issue.itemName}:</strong> {issue.issues.join(", ")}
-                    </div>
-                  ))}
-                  {parsingIssues.length > 3 && (
-                    <div className="text-amber-600">...and {parsingIssues.length - 3} more items</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Search Results Info */}
         {searchTerm && (
           <div className="mb-4 text-sm text-gray-600">
@@ -634,7 +437,7 @@ const TallyStockDashboard = () => {
 
               return (
                 <div key={groupName} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                  {/* Group Header - More Compact */}
+                  {/* Group Header */}
                   <div
                     className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-colors border-b border-gray-100"
                     onClick={() => toggleGroup(groupName)}
@@ -669,7 +472,7 @@ const TallyStockDashboard = () => {
 
                         return (
                           <div key={categoryName}>
-                            {/* Category Header - Smaller */}
+                            {/* Category Header */}
                             <div
                               className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors ml-6 mr-6 my-2 rounded-md"
                               onClick={() => toggleCategory(groupName, categoryName)}
@@ -696,7 +499,7 @@ const TallyStockDashboard = () => {
                               </div>
                             </div>
 
-                            {/* Category Products - Compact Table */}
+                            {/* Category Products - Clean Table */}
                             {isCategoryExpanded && (
                               <div className="mx-6 mb-4">
                                 <div className="overflow-x-auto rounded-md border border-gray-200">
@@ -713,105 +516,41 @@ const TallyStockDashboard = () => {
                                           Unit
                                         </th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 uppercase tracking-wider w-24">
-                                          Standard Price
-                                        </th>
-                                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 uppercase tracking-wider w-24">
-                                          Standard Cost
+                                          Rate
                                         </th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                      {categoryData.map((item, index) => {
-                                        const hasParsingIssue = parsingIssues.some(issue => 
-                                          issue.itemName === item.name
-                                        )
-                                        
-                                        return (
-                                          <tr 
-                                            key={item.originalIndex} 
-                                            className={`hover:bg-blue-50 transition-colors ${
-                                              hasParsingIssue ? 'bg-amber-50' : ''
-                                            }`}
-                                          >
-                                            <td className="px-3 py-2 text-sm text-gray-500 font-medium">
-                                              {index + 1}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                              <div className="flex items-start space-x-2">
-                                                <Package className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                                <div className="min-w-0 flex-1">
-                                                  <div className="text-sm font-medium text-gray-900 break-words">
-                                                    {formatValue(item.name)}
-                                                  </div>
-                                                  {hasParsingIssue && (
-                                                    <div className="flex items-center space-x-1 mt-1">
-                                                      <AlertTriangle className="w-3 h-3 text-amber-500" />
-                                                      <span className="text-xs text-amber-600">Parsing issue</span>
-                                                    </div>
-                                                  )}
+                                      {categoryData.map((item, index) => (
+                                        <tr key={item.originalIndex} className="hover:bg-blue-50 transition-colors">
+                                          <td className="px-3 py-2 text-sm text-gray-500 font-medium">
+                                            {index + 1}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex items-start space-x-2">
+                                              <Package className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-medium text-gray-900 break-words">
+                                                  {formatValue(item.name)}
                                                 </div>
                                               </div>
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                {getUnit(item)}
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2 text-center">
+                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                              {getUnit(item)}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 text-right">
+                                            <div className="flex items-center justify-end space-x-1">
+                                              <DollarSign className="w-3 h-3 text-green-500" />
+                                              <span className="text-sm font-semibold text-gray-900">
+                                                ₹{formatCurrency(item.standardPrice)}
                                               </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                              <div className="flex items-center justify-end space-x-1">
-                                                <DollarSign className="w-3 h-3 text-green-500" />
-                                                <span className="text-sm font-semibold text-gray-900">
-                                                  ₹{formatCurrency(item.standardPrice)}
-                                                </span>
-                                              </div>
-                                              {item.priceUnit && item.priceUnit !== getUnit(item) && (
-                                                <div className="text-xs text-gray-500">
-                                                  per {item.priceUnit}
-                                                </div>
-                                              )}
-                                              {/* Debug info - show field used and raw data */}
-                                              <div className="text-xs text-gray-400 mt-1">
-                                                {item.priceFieldUsed && (
-                                                  <div title="Field Used">
-                                                    Field: {item.priceFieldUsed}
-                                                  </div>
-                                                )}
-                                                {item.rawPriceData && (
-                                                  <div title="Raw Tally Data">
-                                                    Raw: {JSON.stringify(item.rawPriceData)}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                              <div className="flex items-center justify-end space-x-1">
-                                                <DollarSign className="w-3 h-3 text-blue-500" />
-                                                <span className="text-sm font-medium text-gray-700">
-                                                  ₹{formatCurrency(item.standardCost)}
-                                                </span>
-                                              </div>
-                                              {item.costUnit && item.costUnit !== getUnit(item) && (
-                                                <div className="text-xs text-gray-500">
-                                                  per {item.costUnit}
-                                                </div>
-                                              )}
-                                              {/* Debug info - show field used and raw data */}
-                                              <div className="text-xs text-gray-400 mt-1">
-                                                {item.costFieldUsed && (
-                                                  <div title="Field Used">
-                                                    Field: {item.costFieldUsed}
-                                                  </div>
-                                                )}
-                                                {item.rawCostData && (
-                                                  <div title="Raw Tally Data">
-                                                    Raw: {JSON.stringify(item.rawCostData)}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )
-                                      })}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
                                     </tbody>
                                   </table>
                                 </div>
