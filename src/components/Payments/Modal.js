@@ -86,10 +86,12 @@ const Modal = ({ setOpen, open, invoice }) => {
 
   useEffect(() => {
     if (invoice) {
+      console.log("Invoice items:", invoice.items);
       setPayment((prev) => ({
         ...prev,
         amountPaid: Number(invoice.total) - Number(invoice.totalAmountReceived),
         paidBy: invoice?.client?.name,
+        
       }));
     }
   }, [invoice]);

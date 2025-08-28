@@ -7,11 +7,9 @@ export default function SelectType({ type, setType }) {
 
     
 const options = [
-    { title: 'Invoice' },
-    { title: 'Receipt' },
-    { title: 'Estimate' },
+    
     { title: 'Quotation' },
-    { title: 'Bill' },
+
     
   ];
 

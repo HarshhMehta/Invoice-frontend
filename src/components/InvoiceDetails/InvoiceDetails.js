@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSnackbar } from 'notistack'
+import { useSnackbar } from "notistack"
 import { useLocation, useParams, useHistory } from "react-router-dom"
 import { useDispatch, useSelector } from "react-redux"
 import axios from "axios"
@@ -63,11 +63,59 @@ const InvoiceDetails = () => {
     history.push(`/edit/invoice/${id}`)
   }
 
-  // Handle image error
-  const handleImageError = (e) => {
-    e.target.style.display = "none"
-    if (e.target.nextSibling) {
-      e.target.nextSibling.style.display = "flex"
+  const getBrandName = (itemField) => {
+    // Check all possible brand field names that are saved during invoice creation
+    return (
+      itemField?.brand ||
+      itemField?.parent ||
+      itemField?.itemBrand ||
+      itemField?.brandName ||
+      itemField?.manufacturer ||
+      ""
+    )
+  }
+
+  const getImageUrl = (itemField) => {
+    // Check all possible image field names that are saved during invoice creation
+    const rawImageUrl = itemField?.image || itemField?.itemImage || itemField?.imageUrl || itemField?.img || ""
+
+    if (!rawImageUrl || typeof rawImageUrl !== "string") return ""
+
+    const trimmedUrl = rawImageUrl.trim()
+    if (!trimmedUrl) return ""
+
+    // If already a full URL, return as is
+    if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+      return trimmedUrl
+    }
+
+    // If it's a relative path, convert to full URL using the same API base URL as invoice creation
+    if (trimmedUrl.startsWith("/")) {
+      const API_BASE_URL = process.env.REACT_APP_API || "https://invoice-56iv.onrender.com"
+      return `${API_BASE_URL}${trimmedUrl}`
+    }
+
+    return trimmedUrl
+  }
+
+  const isValidImageUrl = (url) => {
+    if (!url || typeof url !== "string") return false
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl) return false
+
+    try {
+      // Check for common image extensions
+      const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"]
+      const lowerUrl = trimmedUrl.toLowerCase()
+      const hasImageExtension = imageExtensions.some((ext) => lowerUrl.includes(ext))
+
+      if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+        new URL(trimmedUrl)
+        return true
+      }
+      return trimmedUrl.startsWith("/") || trimmedUrl.startsWith("data:image/") || hasImageExtension
+    } catch {
+      return trimmedUrl.startsWith("/") || trimmedUrl.startsWith("data:image/") || trimmedUrl.includes(".")
     }
   }
 
@@ -81,7 +129,7 @@ const InvoiceDetails = () => {
         email: invoice.client?.email || "",
         dueDate: invoice.dueDate,
         date: invoice.createdAt,
-        id: invoice.invoiceNumber,
+        id: invoice._id,
         notes: invoice.notes,
         subTotal: toCommas(invoice.subTotal),
         total: toCommas(invoice.total),
@@ -96,7 +144,7 @@ const InvoiceDetails = () => {
       .then(() => axios.get(`${process.env.REACT_APP_API}/fetch-pdf`, { responseType: "blob" }))
       .then((res) => {
         const pdfBlob = new Blob([res.data], { type: "application/pdf" })
-        saveAs(pdfBlob, "invoice.pdf")
+        saveAs(pdfBlob, "Quotation.pdf")
       })
       .then(() => setDownloadStatus("success"))
       .catch((error) => {
@@ -177,26 +225,6 @@ const InvoiceDetails = () => {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="2"
-              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-            />
-          </svg>
-        </button>
-        <button className="text-white p-2 hover:bg-gray-700 rounded">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-            />
-          </svg>
-        </button>
-        <button className="text-white p-2 hover:bg-gray-700 rounded mt-auto">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
               d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
             />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -251,7 +279,7 @@ const InvoiceDetails = () => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth="2"
-                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
+                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
                     />
                   </svg>
                   Follow up
@@ -266,220 +294,221 @@ const InvoiceDetails = () => {
           {/* Payment Modal */}
           <Modal open={open} setOpen={setOpen} invoice={invoice} />
 
-          {/* Header Section with Logo */}
-          <div className="bg-white p-6 border-b border-gray-200">
-            <div className="flex justify-center">
-              <img src="/assets/logo.jpeg" alt="Company Logo" className="h-20 w-auto object-contain" />
-            </div>
-          </div>
-
-          {/* Invoice Content */}
-          <div className="p-6">
+          <div className="bg-white p-8">
+            {/* Header with To and Date */}
             <div className="flex justify-between items-start mb-8">
-              {/* Left Side - Greeting and Bill To */}
-              <div className="w-1/2">
-                <div className="mb-6">
-                  <p className="text-gray-700 mb-2">
-                    Greetings from <strong>ATC</strong> !!
+              {/* Left Side - To Section */}
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">To,</h2>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-gray-900">{client?.name || "N/A"}</h3>
+                  <p className="text-gray-700">Mo. {client?.phone || "N/A"}</p>
+                </div>
+
+                <div className="mt-6 space-y-2">
+                  <p className="text-gray-700">
+                    <strong>Greetings from ATC !!</strong>
                   </p>
-                  <p className="text-sm text-gray-600 mb-2">
+                  <p className="text-sm text-gray-600">
                     This has reference to our personal discussions on your requirements for your upcoming project.
                   </p>
                   <p className="text-sm text-gray-600">We are pleased to give our offer as under:</p>
-                </div>
-
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Bill To:</h3>
-
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <h4 className="font-semibold text-gray-900">{client?.name || "N/A"}</h4>
-                  <p className="text-gray-600">{client?.email || "N/A"}</p>
-                  <p className="text-gray-600">{client?.phone || "N/A"}</p>
-                  <p className="text-gray-600">{client?.address || "N/A"}</p>
                 </div>
               </div>
 
               {/* Right Side - Date */}
               <div className="text-right">
-                <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-                  <div className="flex items-center space-x-4">
-                    <span className="text-gray-500 text-sm font-medium">Date:</span>
-                    <span className="text-gray-900 font-medium">
-                      {moment(invoice.createdAt || new Date()).format("MMM Do YYYY")}
-                    </span>
-                  </div>
-                </div>
+                <p className="text-gray-700">
+                  <strong>Date: {moment(invoice.createdAt || new Date()).format("DD-MM-YYYY")}</strong>
+                </p>
               </div>
             </div>
 
-            {/* Items Table */}
-            <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-8 border border-gray-200">
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-8 border border-gray-300">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full">
+                  <thead className="bg-white border-b-2 border-gray-300">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Sr.
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                        Code
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Brand
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Item Description
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Image
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                        HSN/SAC
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
+                        HSN/SAC Code
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
-                        Qty
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
-                        Unit
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Price
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
-                        Disc(%)
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
+                        Quantity
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                        Amount
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
+                        Unit
                       </th>
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
+                        Discount
+                      </th>
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900">Amount</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {(invoice?.items || []).map((itemField, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-gray-900">{itemField?.srNo || index + 1}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm font-medium text-gray-900">{itemField?.itemCode || ""}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{itemField?.brand || ""}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div>
-                            <span className="text-sm font-medium text-gray-900 block" title={itemField?.itemName}>
-                              {itemField?.itemName || ""}
-                            </span>
-                            {itemField?.description && (
-                              <span className="text-xs text-gray-500 block mt-1">{itemField.description}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center justify-center h-12">
-                            {itemField?.image ? (
-                              <>
-                                <img
-                                  src={itemField.image || "/placeholder.svg"}
-                                  alt={itemField.itemName || "Product"}
-                                  className="w-12 h-12 object-cover rounded border border-gray-300"
-                                  onError={handleImageError}
-                                />
-                                <div
-                                  className="w-12 h-12 bg-gray-100 border border-gray-300 rounded flex items-center justify-center"
-                                  style={{ display: "none" }}
-                                >
-                                  <span className="text-xs text-gray-400">No Image</span>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="w-12 h-12 bg-gray-100 border border-gray-300 rounded flex items-center justify-center">
+                  <tbody className="bg-white">
+                    {(invoice?.items || []).map((itemField, index) => {
+                      const unitPrice = Number.parseFloat(itemField?.unitPrice || 0)
+                      const quantity = Number.parseFloat(itemField?.quantity || 0)
+                      const discount = Number.parseFloat(itemField?.discount || 0)
+                      const itemAmount = unitPrice * quantity * (1 - discount / 100)
+
+                      console.log(`Item ${index + 1} complete data:`, {
+                        brand: itemField?.brand,
+                        parent: itemField?.parent,
+                        itemBrand: itemField?.itemBrand,
+                        image: itemField?.image,
+                        itemImage: itemField?.itemImage,
+                        imageUrl: itemField?.imageUrl,
+                        finalBrand: getBrandName(itemField),
+                        finalImage: getImageUrl(itemField),
+                        fullItem: itemField,
+                      })
+
+                      return (
+                        <tr key={index} className="border-b border-gray-200">
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {index + 1}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {getBrandName(itemField)}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            <div>
+                              <div className="font-medium">{itemField?.itemName || itemField?.name || ""}</div>
+                              {itemField?.description && (
+                                <div className="text-xs text-gray-600 mt-1">{itemField.description}</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 border-r border-gray-200 align-top">
+                            <div className="flex items-center justify-center">
+                              {(() => {
+                                const imageUrl = getImageUrl(itemField)
+                                console.log(`Item ${index + 1} final image URL:`, imageUrl)
+
+                                if (imageUrl && isValidImageUrl(imageUrl)) {
+                                  return (
+                                    <img
+                                      src={imageUrl || "/placeholder.svg"}
+                                      alt={itemField.itemName || itemField.name || "Product"}
+                                      className="w-12 h-12 object-cover rounded border border-gray-300"
+                                      onError={(e) => {
+                                        console.log(`Image failed to load:`, imageUrl)
+                                        e.target.style.display = "none"
+                                        if (e.target.nextSibling) {
+                                          e.target.nextSibling.style.display = "flex"
+                                        }
+                                      }}
+                                      onLoad={(e) => {
+                                        if (e.target.naturalWidth === 0) {
+                                          console.log(`Image has no content:`, imageUrl)
+                                          e.target.style.display = "none"
+                                          if (e.target.nextSibling) {
+                                            e.target.nextSibling.style.display = "flex"
+                                          }
+                                        } else {
+                                          console.log(`Image loaded successfully:`, imageUrl)
+                                        }
+                                      }}
+                                    />
+                                  )
+                                }
+                                return null
+                              })()}
+                              <div
+                                className="w-12 h-12 bg-gray-100 border border-gray-300 rounded flex items-center justify-center"
+                                style={{
+                                  display: (() => {
+                                    const imageUrl = getImageUrl(itemField)
+                                    return imageUrl && isValidImageUrl(imageUrl) ? "none" : "flex"
+                                  })(),
+                                }}
+                              >
                                 <span className="text-xs text-gray-400">No Image</span>
                               </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{itemField?.hsnCode || ""}</span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm font-medium text-gray-900">{itemField?.quantity || ""}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{itemField?.unit || "pcs"}</span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm text-gray-900">
-                            ₹ {Number.parseFloat(itemField?.unitPrice || 0).toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm text-gray-900">{itemField?.discount || 0}%</span>
-                        </td>
-                        <td className="px-4 py-4 whitespace-nowrap text-right">
-                          <span className="text-sm font-medium text-gray-900">
-                            ₹ {toCommas(itemField?.amount || 0)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-300 align-top">
+                            {itemField?.hsnCode || itemField?.hsn || "84818020"}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {unitPrice.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top text-center">
+                            {itemField?.quantity || ""}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {itemField?.unit || "pcs"}
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {itemField?.discount || 0}%
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 align-top">₹{itemAmount.toLocaleString()}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Invoice Summary */}
             <div className="flex justify-end mb-8">
-              <div className="w-full max-w-md">
-                <div className="bg-gray-50 rounded-lg p-6 space-y-4 border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Invoice Summary</h3>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-medium text-gray-900">₹ {toCommas(subTotal)}</span>
+              <div className="w-80">
+                <div className="space-y-2 text-right">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-300">
+                    <span className="text-sm font-medium text-gray-900">Subtotal:</span>
+                    <span className="text-sm font-medium text-gray-900">{toCommas(subTotal)}</span>
                   </div>
 
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">GST ({rates}%):</span>
-                    <span className="font-medium text-gray-900">₹ {toCommas(vat)}</span>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-300">
+                    <span className="text-sm font-medium text-gray-900">Tax @ {rates}%:</span>
+                    <span className="text-sm font-medium text-gray-900">{toCommas(vat)}</span>
                   </div>
 
-                  <hr className="border-gray-300" />
-
-                  <div className="flex justify-between items-center text-lg">
-                    <span className="font-semibold text-gray-800">Total:</span>
-                    <span className="font-bold text-red-600">
-                      {currency} {toCommas(total)}
-                    </span>
+                  <div className="flex justify-between items-center py-3 border-t-2 border-gray-400">
+                    <span className="text-lg font-bold text-gray-900">Final Amount:</span>
+                    <span className="text-lg font-bold text-gray-900">{toCommas(total)}</span>
                   </div>
 
                   {totalAmountReceived > 0 && (
                     <>
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Amount Received:</span>
-                        <span className="font-medium text-green-600">₹ {toCommas(totalAmountReceived)}</span>
+                      <div className="flex justify-between items-center py-2 border-b border-gray-300">
+                        <span className="text-sm font-medium text-gray-900">Amount Received:</span>
+                        <span className="text-sm font-medium text-green-600">{toCommas(totalAmountReceived)}</span>
                       </div>
 
-                      <hr className="border-gray-300" />
+                      <div className="flex justify-between items-center py-3 border-t-2 border-gray-400">
+                        <span className="text-lg font-bold text-gray-900">Balance Due:</span>
+                        <span
+                          className={`text-lg font-bold ${total - totalAmountReceived > 0 ? "text-red-600" : "text-green-600"}`}
+                        >
+                          ₹{toCommas(total - totalAmountReceived)}
+                        </span>
+                      </div>
                     </>
                   )}
-
-                  <div className="flex justify-between items-center text-lg">
-                    <span className="font-semibold text-gray-800">Balance Due:</span>
-                    <span
-                      className={`font-bold ${total - totalAmountReceived > 0 ? "text-red-600" : "text-green-600"}`}
-                    >
-                      {currency} {toCommas(total - totalAmountReceived)}
-                    </span>
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Company Footer */}
-            <div className="bg-gray-800 text-white p-6 rounded-lg text-center">
-              <p className="mb-2">Thank you for your business!</p>
-              <p className="text-sm text-gray-300">
-                ATC - Your Trusted Technology Partner | Email: info@atc.com | Phone: +91-XXXXXXXXXX
+            {/* Footer */}
+            <div className="text-center mt-8 pt-6 border-t border-gray-300">
+              <p className="text-sm text-gray-600">
+                Thank you for your business! | ATC - Your Trusted Technology Partner
               </p>
             </div>
           </div>

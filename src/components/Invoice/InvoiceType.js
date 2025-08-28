@@ -47,13 +47,8 @@ const InvoiceType = ({ type, setType }) => {
                 onChange={handleChange}
                 input={<Input />}
               >
-                <MenuItem value="">
-                  <em>Select Type</em>
-                </MenuItem>
-                <MenuItem value="Invoice">Invoice</MenuItem>
-                <MenuItem value="Receipt">Receipt</MenuItem>
-                <MenuItem value="Estimate">Estimate</MenuItem>
-                <MenuItem value="Bill">Bill</MenuItem>
+            
+                
                 <MenuItem value="Quotation">Quotation</MenuItem>
               </Select>
             </FormControl>
