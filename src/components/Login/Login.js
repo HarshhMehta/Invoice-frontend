@@ -81,7 +81,7 @@ const Login = () => {
       );
 
       dispatch({ type: 'AUTH', data: { result, token } });
-      history.push('/dashboard');
+      history.push('/followup');
     } catch (error) {
       console.log(error);
     }
@@ -94,7 +94,7 @@ const Login = () => {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('profile'));
     if (user) {
-      history.push('/dashboard');
+      history.push('/followUp');
     }
   }, [history]);
 

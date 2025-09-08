@@ -28,6 +28,7 @@ export const addClient =( client ) => API.post('/clients', client)
 export const updateClient = (id, updatedClient) => API.patch(`/clients/${id}`, updatedClient)
 export const deleteClient =(id) => API.delete(`/clients/${id}`)
 export const fetchClientsByUser = (searchQuery) => API.get(`/clients/user?searchQuery=${searchQuery.search}`);
+export const fetchAllClients = () => API.get('/clients/all');
 
 
 export const signIn =(formData)=> API.post('/users/signin', formData)

@@ -14,6 +14,17 @@ export const getClient = (id) => async (dispatch) => {
     }
   };
 
+  export const getAllClients = () => async (dispatch) => {
+    try {
+      dispatch({ type: START_LOADING })
+      const { data: { data } } = await api.fetchAllClients()
+      dispatch({ type: FETCH_CLIENTS_BY_USER, payload: data });
+      dispatch({ type: END_LOADING })
+    } catch (error) {
+      console.log(error.response)
+    }
+  }
+
 
 export const getClientsByUser =(searchQuery) => async (dispatch) => {
     try {

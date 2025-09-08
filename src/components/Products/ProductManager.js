@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   ChevronDown,
   ChevronRight,
@@ -19,6 +19,12 @@ import {
   ImageIcon,
   X,
   Star,
+  Edit,
+  Save,
+  Shield,
+  Users,
+  Tag,
+  Plus,
 } from "lucide-react"
 
 const TallyStockDashboard = () => {
@@ -46,8 +52,99 @@ const TallyStockDashboard = () => {
   const [showImageUpload, setShowImageUpload] = useState(false)
   const [uploadingImages, setUploadingImages] = useState(false)
   const [itemImages, setItemImages] = useState({})
+  
+  // New states for manual fields
+  const [showFieldEditor, setShowFieldEditor] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
+  const [fieldUpdates, setFieldUpdates] = useState({ grandGroup: "", warranty: "" })
+  const [updatingFields, setUpdatingFields] = useState(false)
 
   const API_BASE = "https://invoice-56iv.onrender.com/api/tally"
+
+  // Memoized helper functions
+  const formatValue = useCallback((value) => {
+    if (value === null || value === undefined || value === "") {
+      return ""
+    }
+    
+    // Handle objects with _ property (Tally data structure)
+    if (typeof value === "object" && value !== null) {
+      if (value._ !== undefined) {
+        return String(value._)
+      }
+      if (value.VALUE !== undefined) {
+        return String(value.VALUE)
+      }
+      if (value.NAME !== undefined) {
+        return String(value.NAME)
+      }
+      // If it's still an object, convert to JSON string as fallback
+      return JSON.stringify(value)
+    }
+    
+    return String(value)
+  }, [])
+
+  const formatCurrency = useCallback((value) => {
+    if (value === null || value === undefined || value === "" || value === 0) {
+      return "0.00"
+    }
+    const numValue = Number.parseFloat(value)
+    if (isNaN(numValue)) {
+      return "0.00"
+    }
+    return numValue.toFixed(2)
+  }, [])
+
+  const getUnit = useCallback((item) => {
+    return item.displayUnit || item.baseUnits || "Pcs"
+  }, [])
+
+  // Memoized grouping function
+  const groupStockData = useMemo(() => {
+    return (data) => {
+      const grouped = {}
+
+      data.forEach((item, index) => {
+        // Get parent group from PARENT field - keep exact same logic for both online/offline
+        let parentGroup = "OFFLINE SAVED STOCK ITEMS"
+
+        if (item.parent && typeof item.parent === 'string' && item.parent.trim() !== '' && item.parent.trim() !== '{}') {
+          parentGroup = item.parent.toUpperCase().trim()
+        }
+
+        // Initialize parent group if not exists
+        if (!grouped[parentGroup]) {
+          grouped[parentGroup] = []
+        }
+
+        // Add item directly to parent group (no sub-categories)
+        grouped[parentGroup].push({
+          ...item,
+          originalIndex: index,
+        })
+      })
+
+      return grouped
+    }
+  }, [])
+
+  // Memoized edit handler to prevent recreating on every render
+  const handleEditClick = useCallback((item) => {
+    setEditingItem(item)
+    setFieldUpdates({ 
+      grandGroup: item.grandGroup || "", 
+      warranty: item.warranty || "" 
+    })
+    setShowFieldEditor(true)
+  }, [])
+
+  // Memoized image handler
+  const handleImageClick = useCallback((item) => {
+    setSelectedItem(item)
+    setShowImageUpload(true)
+    if (item.id) fetchItemImages(item.id)
+  }, [])
 
   const checkConnection = async () => {
     try {
@@ -87,6 +184,110 @@ const TallyStockDashboard = () => {
       }
     } catch (err) {
       console.error("Failed to fetch sync status:", err)
+    }
+  }
+
+  const refreshItemData = async (itemId) => {
+    try {
+      const response = await fetch(`${API_BASE}/stock-items/${itemId}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          const updatedItem = result.data
+          
+          // Update the item in all state arrays
+          const updateItem = (item) => {
+            if (item.id === itemId) {
+              return {
+                ...item,
+                grandGroup: updatedItem.grandGroup || "",
+                warranty: updatedItem.warranty || "",
+              }
+            }
+            return item
+          }
+          
+          setStockData(prevData => prevData.map(updateItem))
+          setFilteredData(prevData => prevData.map(updateItem))
+          
+          // Update grouped data
+          setGroupedData(prevGrouped => {
+            const newGrouped = {}
+            Object.keys(prevGrouped).forEach(groupKey => {
+              newGrouped[groupKey] = prevGrouped[groupKey].map(updateItem)
+            })
+            return newGrouped
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to refresh item data:', error)
+    }
+  }
+
+  // Update manual fields
+  const updateManualFields = async (itemId, grandGroup, warranty) => {
+    setUpdatingFields(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock-items/${itemId}/manual-fields`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ grandGroup, warranty }),
+      })
+  
+      const result = await response.json()
+  
+      if (result.success) {
+        console.log(`[SUCCESS] Manual fields updated for item ${itemId}:`, {
+          grandGroup: grandGroup.trim(),
+          warranty: warranty.trim()
+        })
+        
+        // ENHANCED: Update local state immediately with the server response data
+        const serverUpdatedItem = result.data
+        
+        const updateItem = (item) => {
+          if (item.id === itemId || item.tallyId === itemId || item._id === itemId) {
+            return { 
+              ...item, 
+              grandGroup: serverUpdatedItem.grandGroup || "", 
+              warranty: serverUpdatedItem.warranty || "" 
+            }
+          }
+          return item
+        }
+        
+        // Update all related state arrays
+        setStockData(prevData => prevData.map(updateItem))
+        setFilteredData(prevData => prevData.map(updateItem))
+        
+        // Update grouped data
+        setGroupedData(prevGrouped => {
+          const newGrouped = {}
+          Object.keys(prevGrouped).forEach(groupKey => {
+            newGrouped[groupKey] = prevGrouped[groupKey].map(updateItem)
+          })
+          return newGrouped
+        })
+  
+        // Close modal and clear states
+        setError("")
+        setShowFieldEditor(false)
+        setEditingItem(null)
+        setFieldUpdates({ grandGroup: "", warranty: "" })
+        
+        // REMOVED: Don't call fetchStockRates() here as it overwrites local state
+        // The local state update above is sufficient and immediate
+        
+      } else {
+        setError(`Update failed: ${result.message}`)
+      }
+    } catch (err) {
+      setError(`Update error: ${err.message}`)
+    } finally {
+      setUpdatingFields(false)
     }
   }
 
@@ -257,33 +458,6 @@ const TallyStockDashboard = () => {
     return "Pcs"
   }
 
-  
-  const groupStockData = (data) => {
-    const grouped = {}
-
-    data.forEach((item, index) => {
-      // Get parent group from PARENT field - keep exact same logic for both online/offline
-      let parentGroup = "OFFLINE SAVED STOCK ITEMS"
-
-      if (item.parent && typeof item.parent === 'string' && item.parent.trim() !== '' && item.parent.trim() !== '{}') {
-        parentGroup = item.parent.toUpperCase().trim()
-      }
-
-      // Initialize parent group if not exists
-      if (!grouped[parentGroup]) {
-        grouped[parentGroup] = []
-      }
-
-      // Add item directly to parent group (no sub-categories)
-      grouped[parentGroup].push({
-        ...item,
-        originalIndex: index,
-      })
-    })
-
-    return grouped
-  }
-
   const fetchStockRates = async () => {
     setLoading(true)
     setError("")
@@ -334,7 +508,7 @@ const TallyStockDashboard = () => {
         const fallbackResult = await fallbackResponse.json()
         
         if (fallbackResult.success && fallbackResult.data?.stockItems?.length > 0) {
-          processStockData(fallbackResult, fallbackResult.data?.source || "DATABASE")
+          await processStockData(fallbackResult, fallbackResult.data?.source || "DATABASE")
           return
         }
       } catch (fallbackErr) {
@@ -367,10 +541,30 @@ const TallyStockDashboard = () => {
         const baseUnits = formatValue(item.BASEUNITS?._ || item.BASEUNITS || item.baseUnits || item.UNIT || item.unit || "Pcs")
         const parentGroup = formatValue(item.PARENT?._ || item.PARENT || item.parent || item.category || "")
         const hsnCode = formatValue(item.HSNCODE?._ || item.HSNCODE || item.hsnCode || item.hsn || "")
+        
+        // Extract manual fields (these should come from database, not Tally)
+        // KEY FIX: Handle multiple possible field locations and structures
+        let grandGroup = ""
+        let warranty = ""
+        
+        // Try multiple possible locations for manual fields
+        if (item.grandGroup !== undefined && item.grandGroup !== null && String(item.grandGroup).trim() !== "") {
+          grandGroup = String(item.grandGroup).trim()
+        } else if (item.manualFields?.grandGroup !== undefined && String(item.manualFields.grandGroup).trim() !== "") {
+          grandGroup = String(item.manualFields.grandGroup).trim()
+        }
+        
+        if (item.warranty !== undefined && item.warranty !== null && String(item.warranty).trim() !== "") {
+          warranty = String(item.warranty).trim()
+        } else if (item.manualFields?.warranty !== undefined && String(item.manualFields.warranty).trim() !== "") {
+          warranty = String(item.manualFields.warranty).trim()
+        }
+        console.log(`[DEBUG] Item ${itemName}: grandGroup="${grandGroup}", warranty="${warranty}", raw grandGroup:`, item.grandGroup, 'raw warranty:', item.warranty)
 
         // Parse prices
         const priceResult = parsePrice(item, "price")
 
+        // KEY FIX: Better ID handling to ensure consistency
         const itemId = item.tallyId || (item._id ? item._id.toString() : null) || `item_${index}`
 
         const transformedItem = {
@@ -379,6 +573,8 @@ const TallyStockDashboard = () => {
           baseUnits: baseUnits,
           parent: parentGroup,
           hsnCode: hsnCode,
+          grandGroup: grandGroup, // Add manual field
+          warranty: warranty, // Add manual field
           standardPrice: priceResult.value,
           priceUnit: priceResult.unit,
           index: index,
@@ -399,6 +595,8 @@ const TallyStockDashboard = () => {
           id: item.id,
           name: item.name,
           parent: item.parent,
+          grandGroup: item.grandGroup,
+          warranty: item.warranty,
           source: item.source,
           tallyId: item.tallyId,
           mongoId: item.mongoId,
@@ -466,54 +664,23 @@ const TallyStockDashboard = () => {
     }
   }, [])
 
-  useEffect(() => {
+  // Memoized filtered and grouped data
+  const memoizedFilteredData = useMemo(() => {
     if (searchTerm === "") {
-      setFilteredData(stockData)
-      setGroupedData(groupStockData(stockData))
+      return stockData
     } else {
-      const filtered = stockData.filter((item) => item.name?.toLowerCase().includes(searchTerm.toLowerCase()))
-      setFilteredData(filtered)
-      setGroupedData(groupStockData(filtered))
+      return stockData.filter((item) => item.name?.toLowerCase().includes(searchTerm.toLowerCase()))
     }
-  }, [searchTerm, stockData, dataSource]) // Add dataSource dependency
+  }, [searchTerm, stockData])
 
-  const formatValue = (value) => {
-    if (value === null || value === undefined || value === "") {
-      return ""
-    }
-    
-    // Handle objects with _ property (Tally data structure)
-    if (typeof value === "object" && value !== null) {
-      if (value._ !== undefined) {
-        return String(value._)
-      }
-      if (value.VALUE !== undefined) {
-        return String(value.VALUE)
-      }
-      if (value.NAME !== undefined) {
-        return String(value.NAME)
-      }
-      // If it's still an object, convert to JSON string as fallback
-      return JSON.stringify(value)
-    }
-    
-    return String(value)
-  }
+  const memoizedGroupedData = useMemo(() => {
+    return groupStockData(memoizedFilteredData)
+  }, [memoizedFilteredData, groupStockData])
 
-  const formatCurrency = (value) => {
-    if (value === null || value === undefined || value === "" || value === 0) {
-      return "0.00"
-    }
-    const numValue = Number.parseFloat(value)
-    if (isNaN(numValue)) {
-      return "0.00"
-    }
-    return numValue.toFixed(2)
-  }
-
-  const getUnit = (item) => {
-    return item.displayUnit || item.baseUnits || "Pcs"
-  }
+  useEffect(() => {
+    setFilteredData(memoizedFilteredData)
+    setGroupedData(memoizedGroupedData)
+  }, [memoizedFilteredData, memoizedGroupedData])
 
   const toggleGroup = (groupName) => {
     setExpandedGroups((prev) => ({
@@ -739,11 +906,11 @@ const TallyStockDashboard = () => {
                         )}
                         <Building2 className="w-4 h-4 text-blue-600" />
                         <div>
-                        <h2 className="text-lg font-semibold text-gray-900">
-  {groupName.trim() === "" || groupName === "UNCATEGORIZED"
-    ? "OFFLINE SAVED STOCK ITEM"
-    : groupName}
-</h2>
+                          <h2 className="text-lg font-semibold text-gray-900">
+                            {groupName.trim() === "" || groupName === "UNCATEGORIZED"
+                              ? "OFFLINE SAVED STOCK ITEM"
+                              : groupName}
+                          </h2>
                           <p className="text-sm text-gray-600">
                             {groupStats.totalItems} items • Avg Rate: ₹
                             {(groupStats.totalValue / groupStats.totalItems || 0).toFixed(2)}
@@ -766,7 +933,7 @@ const TallyStockDashboard = () => {
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider w-12">
                                   #
                                 </th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[250px]">
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[200px]">
                                   Product Name
                                 </th>
                                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider w-24">
@@ -778,8 +945,8 @@ const TallyStockDashboard = () => {
                                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 uppercase tracking-wider w-24">
                                   Rate
                                 </th>
-                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider w-32">
-                                  Images
+                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[200px]">
+                                  Manual Fields & Actions
                                 </th>
                               </tr>
                             </thead>
@@ -819,24 +986,62 @@ const TallyStockDashboard = () => {
                                       </span>
                                     </div>
                                   </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <div className="flex items-center justify-center space-x-2">
-                                      <button
-                                        onClick={() => {
-                                          setSelectedItem(item)
-                                          setShowImageUpload(true)
-                                          if (item.id) fetchItemImages(item.id)
-                                        }}
-                                        className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-                                      >
-                                        <ImageIcon className="w-3 h-3" />
-                                        <span>Images</span>
-                                      </button>
-                                      {itemImages[item.id] && itemImages[item.id].length > 0 && (
-                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                          {itemImages[item.id].length}
-                                        </span>
-                                      )}
+                                  <td className="px-3 py-2">
+                                    <div className="space-y-2">
+                                      {/* Manual Fields Display */}
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {/* Grand Group Badge */}
+                                        {item.grandGroup && item.grandGroup.trim() !== "" ? (
+                                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                                            <Users className="w-3 h-3 mr-1" />
+                                            {item.grandGroup}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                                            <Users className="w-3 h-3 mr-1" />
+                                            No Group
+                                          </span>
+                                        )}
+
+                                        {/* Warranty Badge */}
+                                        {item.warranty && item.warranty.trim() !== "" ? (
+                                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                                            <Shield className="w-3 h-3 mr-1" />
+                                            {item.warranty}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                                            <Shield className="w-3 h-3 mr-1" />
+                                            No Warranty
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Action Buttons */}
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => handleEditClick(item)}
+                                          className="flex items-center space-x-1 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors border border-purple-200"
+                                          title="Edit Grand Group & Warranty"
+                                        >
+                                          <Edit className="w-3 h-3" />
+                                          <span>Edit Fields</span>
+                                        </button>
+                                        
+                                        <button
+                                          onClick={() => handleImageClick(item)}
+                                          className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors border border-blue-200"
+                                          title="Manage Images"
+                                        >
+                                          <ImageIcon className="w-3 h-3" />
+                                          <span>Images</span>
+                                          {itemImages[item.id] && itemImages[item.id].length > 0 && (
+                                            <span className="inline-flex items-center justify-center w-4 h-4 text-xs font-bold text-white bg-green-500 rounded-full">
+                                              {itemImages[item.id].length}
+                                            </span>
+                                          )}
+                                        </button>
+                                      </div>
                                     </div>
                                   </td>
                                 </tr>
@@ -862,6 +1067,17 @@ const TallyStockDashboard = () => {
                 </div>
                 <div className="text-sm text-gray-600">
                   <span className="font-medium">{Object.keys(groupedData).length}</span> groups
+                </div>
+                {/* Manual Fields Stats */}
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium text-purple-600">
+                    {stockData.filter(item => item.grandGroup && item.grandGroup.trim() !== "").length}
+                  </span> with Grand Group
+                </div>
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium text-green-600">
+                    {stockData.filter(item => item.warranty && item.warranty.trim() !== "").length}
+                  </span> with Warranty
                 </div>
                 {syncStatus.pendingItems > 0 && (
                   <div className="text-sm text-amber-600">
@@ -893,6 +1109,115 @@ const TallyStockDashboard = () => {
         )}
       </div>
 
+      {/* Field Editor Modal */}
+      {showFieldEditor && editingItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Edit Manual Fields</h3>
+              <button
+                onClick={() => {
+                  setShowFieldEditor(false)
+                  setEditingItem(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                <div className="flex items-start space-x-2">
+                  <Package className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">
+                      {editingItem.name}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      ID: {editingItem.id} | Parent: {editingItem.parent || "N/A"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="flex items-center space-x-2">
+                      <Users className="w-4 h-4 text-purple-600" />
+                      <span>Grand Group</span>
+                      <span className="text-xs text-gray-500">(Manual Field)</span>
+                    </div>
+                  </label>
+                  <input
+                    type="text"
+                    value={fieldUpdates.grandGroup}
+                    onChange={(e) => setFieldUpdates(prev => ({ ...prev, grandGroup: e.target.value }))}
+                    placeholder="Enter grand group category..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Current: {editingItem.grandGroup || "Not set"}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="flex items-center space-x-2">
+                      <Shield className="w-4 h-4 text-green-600" />
+                      <span>Warranty</span>
+                      <span className="text-xs text-gray-500">(Manual Field)</span>
+                    </div>
+                  </label>
+                  <input
+                    type="text"
+                    value={fieldUpdates.warranty}
+                    onChange={(e) => setFieldUpdates(prev => ({ ...prev, warranty: e.target.value }))}
+                    placeholder="Enter warranty details (e.g., 1 Year, 6 Months)..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Current: {editingItem.warranty || "Not set"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowFieldEditor(false)
+                  setEditingItem(null)
+                }}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => updateManualFields(editingItem.id, fieldUpdates.grandGroup, fieldUpdates.warranty)}
+                disabled={updatingFields}
+                className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors text-sm"
+              >
+                <Save className={`w-4 h-4 ${updatingFields ? "animate-pulse" : ""}`} />
+                <span>{updatingFields ? "Saving..." : "Save Changes"}</span>
+              </button>
+            </div>
+
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-yellow-800">
+                  <p className="font-medium">Important Note:</p>
+                  <p>These manual fields are stored separately and won't be overwritten during Tally sync. They help you organize and categorize your inventory beyond Tally's standard fields.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Upload Modal */}
       {showImageUpload && selectedItem && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">

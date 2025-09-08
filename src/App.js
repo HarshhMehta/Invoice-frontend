@@ -18,6 +18,7 @@ import Settings from './components/Settings/Settings';
 import Forgot from './components/Password/Forgot';
 import Reset from './components/Password/Reset';
 import ProductManager from './components/Products/ProductManager.js';
+import FollowUpDashboard from './components/FollowUp/FollowUpDashboard.js';
 
 // Create theme with proper spacing function
 const theme = createTheme({
@@ -49,6 +50,7 @@ function App() {
             <Header />
             <Switch>
               <Route path="/" exact component={Home} />
+              <Route path="/followup" exact component={FollowUpDashboard} />
               <Route path="/ProductManager" exact component={ProductManager} />
               <Route path="/invoice" exact component={Invoice} />
               <Route path="/edit/invoice/:id" exact component={Invoice} />
@@ -60,6 +62,7 @@ function App() {
               <Route path="/customers" exact component={ClientList} />
               <Route path="/forgot" exact component={Forgot} />
               <Route path="/reset/:token" exact component={Reset} />
+
               <Redirect exact from="/new-invoice" to="/invoice" />
             </Switch>
             <Footer />

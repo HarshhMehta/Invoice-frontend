@@ -10,7 +10,6 @@ import { toCommas } from "../../utils/utils"
 import { initialState } from "../../initialState"
 import currencies from "../../currencies.json"
 import { createInvoice, getInvoice, updateInvoice } from "../../actions/invoiceActions"
-import { getClientsByUser } from "../../actions/clientActions"
 import AddClient from "./AddClient"
 import InvoiceType from "./InvoiceType"
 
@@ -31,13 +30,34 @@ const enhancedInitialState = {
       discount: "",
       amount: "",
       image: "",
-      parent: "", // Brand/Parent from Tally
+      grandGroup: "", // Brand/Parent from Tally
+      warranty: "", // Added warranty field
     },
   ],
 }
 
 // Updated API Base URL for your product search
 const API_BASE_URL = process.env.REACT_APP_API || "https://invoice-56iv.onrender.com"
+
+const normalizeImageUrl = (raw) => {
+  if (!raw) return ""
+
+  let url = String(raw).trim()
+  // If a duplicated base occurs like "http://base/http://base/…", keep from the last http(s)
+  const lastHttp = Math.max(url.lastIndexOf("http://"), url.lastIndexOf("https://"))
+  if (lastHttp > 0) url = url.slice(lastHttp)
+
+  // If already absolute, return as-is
+  if (url.startsWith("http://") || url.startsWith("https://")) return url
+
+  // Otherwise prefix with API base
+  const base = API_BASE_URL || "https://invoice-56iv.onrender.com"
+  return `${base}${url.startsWith("/") ? "" : "/"}${url}`
+}
+
+const pickHSN = (item) => {
+  return String(item?.hsnCode ?? item?.HSNCODE ?? item?.HSNCode ?? item?.hsncode ?? "")
+}
 
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value)
@@ -68,7 +88,14 @@ const Invoice = () => {
   const [type, setType] = useState("Quotation")
   const [status, setStatus] = useState("")
 
-  // Optimized product search states
+  // Customer search states - exactly like products pattern
+  const [customerSearchTerm, setCustomerSearchTerm] = useState("")
+  const [customerSearchResults, setCustomerSearchResults] = useState([])
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
+  const [loadingCustomers, setLoadingCustomers] = useState(false)
+  const [customerCache, setCustomerCache] = useState(new Map()) // Cache for customers
+
+  // Optimized product search states (unchanged - working fine)
   const [productCache, setProductCache] = useState(new Map()) // Cache for loaded products
   const [searchResults, setSearchResults] = useState({}) // Search results per row
   const [loadingSearch, setLoadingSearch] = useState({}) // Loading state per row
@@ -76,6 +103,7 @@ const Invoice = () => {
   const [showSuggestions, setShowSuggestions] = useState({})
 
   const debouncedSearchTerms = useDebounce(searchTerms, 300)
+  const debouncedCustomerSearchTerm = useDebounce(customerSearchTerm, 300) // Same pattern as products
 
   const { id } = useParams()
   const clients = useSelector((state) => state.clients.clients)
@@ -85,8 +113,15 @@ const Invoice = () => {
   const user = JSON.parse(localStorage.getItem("profile"))
 
   const [open, setOpen] = useState(false)
+  const [creatorNameInput, setCreatorNameInput] = useState((user && (user.result?.name || user.name)) || "—")
+  const [creatorPhoneInput, setCreatorPhoneInput] = useState(
+    (user && (user.result?.phone || user.result?.mobile || user.phone)) || "—",
+  )
 
-  // Updated product search function to use your specific API
+  const creatorName = (user && (user.result?.name || user.name)) || "—"
+  const creatorPhone = (user && (user.result?.phone || user.result?.mobile || user.phone)) || "—"
+
+  // Updated product search function to use your specific API - MOVED BEFORE useEffect
   const searchProducts = useCallback(
     async (searchTerm, rowIndex) => {
       if (!searchTerm || searchTerm.length < 2) {
@@ -109,14 +144,16 @@ const Invoice = () => {
 
       try {
         // Updated API call to match your endpoint structure
-        const response = await fetch(`${API_BASE_URL}/api/products/search?q=${encodeURIComponent(searchTerm)}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            // Add authorization header if needed
-            ...(user?.token && { Authorization: `Bearer ${user.token}` }),
+        const response = await fetch(
+          `${API_BASE_URL}/api/tally/stock-rates/search?q=${encodeURIComponent(searchTerm)}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(user?.token && { Authorization: `Bearer ${user.token}` }),
+            },
           },
-        })
+        )
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
@@ -124,6 +161,7 @@ const Invoice = () => {
 
         const result = await response.json()
         console.log("API Response:", result) // For debugging
+        console.log("API Response keys:", Object.keys(result)) // Debug structure
 
         // Handle your specific API response structure
         let products = []
@@ -142,38 +180,44 @@ const Invoice = () => {
           products = []
         }
 
-        // Transform products to match our required format
+        // Transform products to match our required format - FIXED MAPPING
         const transformedProducts = products.map((item) => {
-          // Handle image URL - your API returns relative paths like "/uploads/stock-images/..."
+          // Prefer explicit image fields and normalize
           let imageUrl = ""
-          if (item.image && item.image.trim() && item.image !== "") {
-            imageUrl = item.image.trim()
-            // Convert relative path to full URL
-            if (!imageUrl.startsWith("https")) {
-              imageUrl = `${API_BASE_URL}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`
-            }
-          }
+          const candidate =
+            item.image ??
+            item.primaryImage ??
+            (Array.isArray(item.images) && item.images.length > 0
+              ? typeof item.images[0] === "string"
+                ? item.images[0]
+                : item.images[0]?.url || ""
+              : "")
 
-          console.log(`Product: ${item.itemName}, Original Image: "${item.image}", Final URL: "${imageUrl}"`) // Debug log
+          if (candidate) imageUrl = normalizeImageUrl(candidate)
+
+          console.log(
+            `Product: ${item.itemName || item.name}, Original Image: "${item.image}", Final URL: "${imageUrl}"`,
+          )
 
           return {
-            itemCode: String(item.itemCode || ""),
-            itemName: String(item.itemName || ""),
-            brand: String(item.brand || ""),
-            hsnCode: String(item.hsnCode || ""),
-            unitPrice: Number(item.unitPrice || 0),
-            unit: String(item.unit || "pcs"),
-            description: String(item.description || item.itemName || ""),
+            itemCode: String(item.itemCode || item.tallyId || ""),
+            itemName: String(item.itemName || item.name || item.displayName || ""),
+            brand: String(item.brand || item.grandGroup || item.stockGroup || item.group || ""),
+            hsnCode: pickHSN(item), // <— robust HSN mapping
+            unitPrice: Number(item.unitPrice ?? item.standardPrice ?? 0),
+            unit: String(item.unit || item.baseUnits || "pcs"),
+            description: String(item.description || item.itemName || item.name || ""),
+            warranty: String(item.warranty ?? ""),
+            grandGroup: String(item.grandGroup || ""),
             image: imageUrl,
-            id: String(item.id || ""),
-            // Additional fields from your API
+            id: String(item.id || item._id || ""),
             stockCategory: String(item.stockCategory || ""),
-            group: String(item.group || ""),
+            group: String(item.group || item.stockGroup || ""),
             category: String(item.category || ""),
           }
         })
 
-        console.log("Transformed products:", transformedProducts) // For debugging
+        console.log("Transformed products:", transformedProducts)
 
         // Cache the results
         setProductCache((prev) => new Map(prev.set(cacheKey, transformedProducts)))
@@ -195,7 +239,69 @@ const Invoice = () => {
     [productCache, user],
   )
 
-  // Effect for debounced search
+  // Customer search function - exactly like products pattern
+  const searchCustomers = useCallback(
+    async (searchTerm) => {
+      if (!searchTerm || searchTerm.length < 2) {
+        setCustomerSearchResults([])
+        return
+      }
+
+      // Check cache first - same as products
+      const cacheKey = searchTerm.toLowerCase()
+      if (customerCache.has(cacheKey)) {
+        const cachedResults = customerCache.get(cacheKey)
+        setCustomerSearchResults(Array.isArray(cachedResults) ? cachedResults : [])
+        return
+      }
+
+      setLoadingCustomers(true)
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/clients/search?q=${encodeURIComponent(searchTerm)}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...(user?.token && { Authorization: `Bearer ${user.token}` }),
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const result = await response.json()
+        console.log("Customer API Response:", result) // For debugging
+
+        let customers = []
+        // Handle API response structure - same as products
+        if (result.success && Array.isArray(result.data)) {
+          customers = result.data
+        } else if (Array.isArray(result)) {
+          customers = result
+        } else if (result.clients && Array.isArray(result.clients)) {
+          customers = result.clients
+        } else {
+          console.warn("Unexpected Customer API response structure:", result)
+          customers = []
+        }
+
+        console.log("Transformed customers:", customers) // For debugging
+
+        // Cache the results - same as products
+        setCustomerCache((prev) => new Map(prev.set(cacheKey, customers)))
+        setCustomerSearchResults(customers)
+      } catch (error) {
+        console.error("Error searching customers from API:", error)
+        setCustomerSearchResults([])
+      } finally {
+        setLoadingCustomers(false)
+      }
+    },
+    [customerCache, user],
+  )
+
+  // Effect for debounced product search - NOW AFTER searchProducts declaration
   useEffect(() => {
     Object.keys(debouncedSearchTerms).forEach((rowIndex) => {
       const searchTerm = debouncedSearchTerms[rowIndex]
@@ -205,30 +311,36 @@ const Invoice = () => {
     })
   }, [debouncedSearchTerms, searchProducts])
 
-  // Load product image from your database (if you have image endpoint)
+  // Effect for debounced customer search - exactly like products pattern
+  useEffect(() => {
+    if (debouncedCustomerSearchTerm && debouncedCustomerSearchTerm.length >= 2) {
+      searchCustomers(debouncedCustomerSearchTerm)
+    }
+  }, [debouncedCustomerSearchTerm, searchCustomers])
+
+  // Select customer function
+  const selectCustomer = (selectedClient) => {
+    setClient(selectedClient)
+    setCustomerSearchTerm(selectedClient.name)
+    setShowCustomerSuggestions(false)
+    setCustomerSearchResults([])
+    setLoadingCustomers(false)
+  }
+
   const loadProductImage = async (productId, itemIndex) => {
     if (!productId) return
-
     try {
       const imageResponse = await fetch(`${API_BASE_URL}/api/products/${productId}/image`, {
         headers: {
           ...(user?.token && { Authorization: `Bearer ${user.token}` }),
         },
       })
-
       if (imageResponse.ok) {
         const imageResult = await imageResponse.json()
-        let imageUrl = ""
-
-        if (imageResult.success && imageResult.imageUrl) {
-          imageUrl = imageResult.imageUrl
-        } else if (imageResult.image) {
-          imageUrl = imageResult.image
-        } else if (imageResult.data && imageResult.data.imageUrl) {
-          imageUrl = imageResult.data.imageUrl
-        }
+        let imageUrl = imageResult?.imageUrl ?? imageResult?.image ?? imageResult?.data?.imageUrl ?? ""
 
         if (imageUrl) {
+          imageUrl = normalizeImageUrl(imageUrl) // normalize before setting
           setInvoiceData((prev) => {
             const newItems = [...prev.items]
             if (newItems[itemIndex]) {
@@ -246,13 +358,6 @@ const Invoice = () => {
   useEffect(() => {
     dispatch(getInvoice(id))
   }, [id, dispatch])
-
-  useEffect(() => {
-    const userId = user?.result._id || user?.result?.googleId
-    if (userId) {
-      dispatch(getClientsByUser({ search: userId }))
-    }
-  }, [dispatch, user?.result._id, user?.result?.googleId])
 
   useEffect(() => {
     if (invoice) {
@@ -275,45 +380,55 @@ const Invoice = () => {
 
   const selectTallyProduct = useCallback(
     (product, index) => {
+      console.log("Selecting product:", product)
+      console.log("Product fields available:", Object.keys(product))
+
       const values = [...invoiceData.items]
+
+      const resolvedImage = normalizeImageUrl(
+        product?.image ??
+          product?.primaryImage ??
+          ((Array.isArray(product?.images) && product.images.length > 0
+            ? typeof product.images[0] === "string"
+              ? product.images[0]
+              : product.images[0]?.url || ""
+            : "") ||
+            values[index]?.image ||
+            ""),
+      )
+
       values[index] = {
         ...values[index],
-        itemCode: String(product.itemCode || ""),
-        brand: String(product.brand || ""), // Make sure brand is properly set
-        itemName: String(product.itemName || ""),
-        description: String(product.description || product.itemName || ""),
-        hsnCode: String(product.hsnCode || ""),
-        unitPrice: String(product.unitPrice || "0"),
-        unit: String(product.unit || "pcs"),
+        itemCode: String(product.itemCode || values[index].itemCode || ""),
+        brand: String(
+          product.brand || product.grandGroup || product.stockGroup || product.group || values[index].brand || "",
+        ),
+        itemName: String(product.itemName || values[index].itemName || ""),
+        description: String(product.description || product.itemName || values[index].description || ""),
+        hsnCode: pickHSN(product) || String(values[index].hsnCode || ""), // ensure HSN fills
+        unitPrice: String(product.unitPrice ?? values[index].unitPrice ?? "0"),
+        unit: String(product.unit || values[index].unit || "pcs"),
         discount: String(values[index].discount || "0"),
-        image: String(product.image || ""), // Ensure image is saved
-        parent: String(product.brand || ""), // Keep parent as fallback
-        // Add these additional fields for better compatibility
-        itemBrand: String(product.brand || ""),
-        itemImage: String(product.image || ""),
-        imageUrl: String(product.image || ""),
+        image: resolvedImage, // ensure image fills
+        grandGroup: String(product.grandGroup || values[index].grandGroup || ""),
+        warranty: String(product.warranty ?? values[index].warranty ?? ""),
+        quantity: values[index].quantity || "1",
       }
 
       const quantity = Number.parseFloat(values[index].quantity) || 1
       const unitPrice = Number.parseFloat(values[index].unitPrice) || 0
       const discount = Number.parseFloat(values[index].discount) || 0
-
       const discountPercent = Math.min(Math.max(discount, 0), 100)
       const discountAmount = (quantity * unitPrice * discountPercent) / 100
       values[index].amount = Math.max(0, quantity * unitPrice - discountAmount)
+
+      console.log("Updated item values:", values[index])
 
       setInvoiceData({ ...invoiceData, items: values })
       setShowSuggestions((prev) => ({ ...prev, [index]: false }))
       setSearchTerms((prev) => ({ ...prev, [index]: String(product.itemName || "") }))
 
-      // Log for debugging
-      console.log("Selected product data:", {
-        brand: product.brand,
-        image: product.image,
-        savedItem: values[index],
-      })
-
-      if (product.id && !product.image) {
+      if (product.id && !resolvedImage) {
         loadProductImage(product.id, index)
       }
     },
@@ -364,6 +479,7 @@ const Invoice = () => {
     }
 
     setInvoiceData({ ...invoiceData, items: values })
+    console.log("State updated with:", { ...invoiceData, items: values })
   }
 
   // Handle image error
@@ -436,7 +552,8 @@ const Invoice = () => {
           discount: "",
           amount: "",
           image: "",
-          parent: "",
+          grandGroup: "",
+          warranty: "", // Added warranty field for new items
         },
       ],
     }))
@@ -472,6 +589,12 @@ const Invoice = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    const quotationCreatorData = {
+      name: creatorNameInput || creatorName || "—",
+      phone: creatorPhoneInput || creatorPhone || "—",
+    }
+
     if (invoice) {
       dispatch(
         updateInvoice(invoice._id, {
@@ -485,6 +608,7 @@ const Invoice = () => {
           client,
           type: type,
           status: status,
+          quotationCreator: quotationCreatorData,
         }),
       )
       history.push(`/invoice/${invoice._id}`)
@@ -502,6 +626,7 @@ const Invoice = () => {
             client,
             type: type,
             status: status,
+            quotationCreator: quotationCreatorData,
             paymentRecords: [],
             creator: [user?.result?._id || user?.result?.googleId],
           },
@@ -576,33 +701,127 @@ const Invoice = () => {
                       <button
                         type="button"
                         className="mt-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        onClick={() => setClient(null)}
+                        onClick={() => {
+                          setClient(null)
+                          setCustomerSearchTerm("")
+                          setCustomerSearchResults([])
+                          setShowCustomerSuggestions(false)
+                          setLoadingCustomers(false)
+                        }}
                       >
                         Change Customer
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center space-x-2">
-                    <select
-                      className="border border-gray-300 rounded px-3 py-2 text-sm"
-                      required={!invoice}
-                      value={client?.name || ""}
-                      onChange={(e) => {
-                        const selectedClient = clients.find((c) => c.name === e.target.value)
-                        setClient(selectedClient)
-                      }}
-                    >
-                      <option value="">Select Customer</option>
-                      {clients.map((client, index) => (
-                        <option key={index} value={client.name}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex items-center space-x-2 relative">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className="border border-gray-300 rounded px-3 py-2 text-sm w-64"
+                        placeholder="Search customer by name..."
+                        value={customerSearchTerm}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setCustomerSearchTerm(value)
+
+                          // Show suggestions if length >= 2 - same as products
+                          if (value.length >= 2) {
+                            setShowCustomerSuggestions(true)
+                          } else {
+                            setShowCustomerSuggestions(false)
+                            setCustomerSearchResults([])
+                            setLoadingCustomers(false)
+                          }
+                        }}
+                        onFocus={() => {
+                          if (customerSearchTerm.length >= 2 && customerSearchResults.length > 0) {
+                            setShowCustomerSuggestions(true)
+                          }
+                        }}
+                        onBlur={() => {
+                          // Delay hiding suggestions to allow clicking
+                          setTimeout(() => {
+                            setShowCustomerSuggestions(false)
+                          }, 200)
+                        }}
+                        required={!invoice}
+                        autoComplete="off"
+                      />
+
+                      {/* Loading indicator for customer search */}
+                      {loadingCustomers && (
+                        <div className="absolute right-2 top-2 z-10">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        </div>
+                      )}
+
+                      {/* Customer search suggestions - same style as products */}
+                      {showCustomerSuggestions && customerSearchResults.length > 0 && (
+                        <div className="absolute z-[9999] top-full left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-xl max-h-60 overflow-y-auto min-w-[400px]">
+                          {customerSearchResults.map((customer, index) => (
+                            <div
+                              key={customer._id || customer.id || index}
+                              className="p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                selectCustomer(customer)
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm text-gray-900 mb-1">{customer.name}</div>
+                                  <div className="text-xs text-gray-600 space-y-1">
+                                    {customer.email && (
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-blue-500">@</span>
+                                        <span>{customer.email}</span>
+                                      </div>
+                                    )}
+                                    {customer.phone && (
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-green-500">#</span>
+                                        <span>{customer.phone}</span>
+                                      </div>
+                                    )}
+                                    {customer.address && (
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-gray-500">*</span>
+                                        <span className="truncate">{customer.address}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Show "No customers found" message */}
+                      {showCustomerSuggestions &&
+                        customerSearchResults.length === 0 &&
+                        customerSearchTerm.length >= 2 &&
+                        !loadingCustomers && (
+                          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg p-3 text-center text-gray-500 text-sm">
+                            <div className="flex items-center justify-center space-x-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                />
+                              </svg>
+                              <span>No customers found for "{customerSearchTerm}"</span>
+                            </div>
+                          </div>
+                        )}
+                    </div>
+
                     <button
                       type="button"
-                      className="px-3 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                      className="px-3 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors"
                       onClick={() => setOpen(true)}
                     >
                       Add New
@@ -611,14 +830,43 @@ const Invoice = () => {
                 )}
               </div>
 
-              <div className="flex items-center space-x-2">
-                <span className="text-gray-600 font-medium">Date:</span>
-                <input
-                  type="date"
-                  value={moment(selectedDate).format("YYYY-MM-DD")}
-                  onChange={(e) => setSelectedDate(new Date(e.target.value).getTime())}
-                  className="border border-gray-300 rounded px-3 py-2 text-sm"
-                />
+              <div className="flex flex-col items-start space-y-2">
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-600 font-medium">Date:</span>
+                  <input
+                    type="date"
+                    value={moment(selectedDate).format("YYYY-MM-DD")}
+                    onChange={(e) => setSelectedDate(new Date(e.target.value).getTime())}
+                    className="border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="w-full">
+                  <p className="text-sm font-medium text-gray-700">Quotation Creator</p>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col text-sm">
+                      <span className="text-gray-600 mb-1">Name</span>
+                      <input
+                        type="text"
+                        value={creatorNameInput}
+                        onChange={(e) => setCreatorNameInput(e.target.value)}
+                        placeholder="Enter name"
+                        className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-blue-500"
+                      />
+                    </label>
+
+                    <label className="flex flex-col text-sm">
+                      <span className="text-gray-600 mb-1">Phone</span>
+                      <input
+                        type="tel"
+                        value={creatorPhoneInput}
+                        onChange={(e) => setCreatorPhoneInput(e.target.value)}
+                        placeholder="Enter phone number"
+                        className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -664,6 +912,9 @@ const Invoice = () => {
                         Discount
                       </th>
                       <th className="border-r border-gray-300 px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Warranty
+                      </th>
+                      <th className="border-r border-gray-300 px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                         Amount
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
@@ -684,7 +935,7 @@ const Invoice = () => {
                             className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             onChange={(e) => handleChange(index, e)}
                             value={itemField.brand || ""}
-                            placeholder="CERA"
+                            placeholder="ASTRAL"
                           />
                         </td>
                         <td
@@ -775,7 +1026,7 @@ const Invoice = () => {
                                             </span>
                                           )}
                                           <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                                            
+                                            ₹
                                             {typeof product.unitPrice === "number"
                                               ? product.unitPrice.toFixed(2)
                                               : "0.00"}
@@ -783,6 +1034,11 @@ const Invoice = () => {
                                           {product.unit && (
                                             <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs">
                                               Unit: {product.unit}
+                                            </span>
+                                          )}
+                                          {product.warranty && (
+                                            <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs">
+                                              Warranty: {product.warranty}
                                             </span>
                                           )}
                                         </div>
@@ -837,7 +1093,7 @@ const Invoice = () => {
                             className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             onChange={(e) => handleChange(index, e)}
                             value={itemField.hsnCode || ""}
-                            placeholder="84818020"
+                            placeholder="39174000"
                           />
                         </td>
                         <td className="border-r border-gray-200 px-3 py-4">
@@ -866,7 +1122,7 @@ const Invoice = () => {
                             name="unit"
                             value={itemField.unit || "pcs"}
                             onChange={(e) => handleChange(index, e)}
-                            className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white" // Added appearance-none and bg-white for better dropdown styling
+                            className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
                           >
                             {unitOptions.map((unit) => (
                               <option key={unit} value={unit}>
@@ -897,9 +1153,19 @@ const Invoice = () => {
                             max="100"
                           />
                         </td>
+                        <td className="border-r border-gray-200 px-3 py-4">
+                          <input
+                            type="text"
+                            name="warranty"
+                            className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            onChange={(e) => handleChange(index, e)}
+                            value={itemField.warranty || ""}
+                            placeholder="1 Year"
+                          />
+                        </td>
                         <td className="border-r border-gray-200 px-3 py-4 text-right">
                           <span className="text-sm font-medium text-gray-900">
-                            {typeof itemField.amount === "number" ? toCommas(itemField.amount) : toCommas(0)}
+                            ₹{typeof itemField.amount === "number" ? toCommas(itemField.amount) : toCommas(0)}
                           </span>
                         </td>
                         <td className="px-3 py-4 text-center">
@@ -1014,14 +1280,14 @@ const Invoice = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Subtotal:</span>
                       <span className="font-medium text-gray-900">
-                        {typeof subTotal === "number" ? toCommas(subTotal) : toCommas(0)}
+                        ₹{typeof subTotal === "number" ? toCommas(subTotal) : toCommas(0)}
                       </span>
                     </div>
 
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">GST ({rates}%):</span>
                       <span className="font-medium text-gray-900">
-                        {typeof vat === "number" ? toCommas(vat) : toCommas(0)}
+                        ₹{typeof vat === "number" ? toCommas(vat) : toCommas(0)}
                       </span>
                     </div>
 
@@ -1030,7 +1296,7 @@ const Invoice = () => {
                     <div className="flex justify-between items-center text-lg">
                       <span className="font-semibold text-gray-800">Total:</span>
                       <span className="font-bold text-gray-900">
-                        {typeof total === "number" ? toCommas(total) : toCommas(0)}
+                        ₹{typeof total === "number" ? toCommas(total) : toCommas(0)}
                       </span>
                     </div>
                   </div>

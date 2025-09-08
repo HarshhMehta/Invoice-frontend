@@ -12,7 +12,7 @@ export const signin =(formData, openSnackbar) => async(dispatch) => {
 
         openSnackbar("Signin successfull")
         // history.push('/dashboard')
-        window.location.href="/dashboard"
+        window.location.href="/followUp"
 
     } catch (error) {
         // console.log(error?.response?.data?.message)
@@ -28,7 +28,7 @@ export const signup =(formData, openSnackbar) => async(dispatch) => {
         dispatch({ type: AUTH, data})
         const { info } = await api.createProfile({name: data?.result?.name, email: data?.result?.email, userId: data?.result?._id, phoneNumber: '', businessName: '', contactAddress: '', logo: '', website: ''});
         dispatch({ type: CREATE_PROFILE, payload: info });
-        window.location.href="/dashboard"
+        window.location.href="/followUp"
         // history.push('/dashboard')
         openSnackbar("Sign up successfull")
 
@@ -53,7 +53,7 @@ export const reset =(formData, history) => async(dispatch) => {
 
     try {
         await api.reset(formData)
-        history.push('/dashboard')
+        history.push('/followUp')
 
     } catch (error) {
         alert(error)

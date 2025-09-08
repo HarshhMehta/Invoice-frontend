@@ -24,6 +24,9 @@ const InvoiceDetails = () => {
   const [client, setClient] = useState([])
   const [status, setStatus] = useState("")
   const [company, setCompany] = useState({})
+  // Fixed state initialization for quotation creator
+  const [quotationCreator, setQuotationCreator] = useState({ name: '', phone: '' })
+  
   const { id } = useParams()
   const { invoice } = useSelector((state) => state.invoices)
   const dispatch = useDispatch()
@@ -48,6 +51,15 @@ const InvoiceDetails = () => {
       setSubTotal(invoice.subTotal || 0)
       setTotal(invoice.total || 0)
       setCompany(invoice?.businessDetails?.data?.data || {})
+      
+      // Fixed quotation creator data setting - handle all possible cases
+      const creatorData = invoice.quotationCreator || {}
+      console.log("Invoice quotationCreator data:", creatorData) // Debug log
+      
+      setQuotationCreator({
+        name: creatorData.name || '',
+        phone: creatorData.phone || creatorData.mobile || '' // Handle both phone and mobile fields
+      })
     }
   }, [invoice])
 
@@ -64,7 +76,6 @@ const InvoiceDetails = () => {
   }
 
   const getBrandName = (itemField) => {
-    // Check all possible brand field names that are saved during invoice creation
     return (
       itemField?.brand ||
       itemField?.parent ||
@@ -76,7 +87,6 @@ const InvoiceDetails = () => {
   }
 
   const getImageUrl = (itemField) => {
-    // Check all possible image field names that are saved during invoice creation
     const rawImageUrl = itemField?.image || itemField?.itemImage || itemField?.imageUrl || itemField?.img || ""
 
     if (!rawImageUrl || typeof rawImageUrl !== "string") return ""
@@ -84,12 +94,10 @@ const InvoiceDetails = () => {
     const trimmedUrl = rawImageUrl.trim()
     if (!trimmedUrl) return ""
 
-    // If already a full URL, return as is
     if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
       return trimmedUrl
     }
 
-    // If it's a relative path, convert to full URL using the same API base URL as invoice creation
     if (trimmedUrl.startsWith("/")) {
       const API_BASE_URL = process.env.REACT_APP_API || "https://invoice-56iv.onrender.com"
       return `${API_BASE_URL}${trimmedUrl}`
@@ -104,7 +112,6 @@ const InvoiceDetails = () => {
     if (!trimmedUrl) return false
 
     try {
-      // Check for common image extensions
       const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"]
       const lowerUrl = trimmedUrl.toLowerCase()
       const hasImageExtension = imageExtensions.some((ext) => lowerUrl.includes(ext))
@@ -140,6 +147,7 @@ const InvoiceDetails = () => {
         totalAmountReceived: toCommas(totalAmountReceived),
         balanceDue: toCommas(total - totalAmountReceived),
         company: company,
+        quotationCreator: quotationCreator, // Use the state value
       })
       .then(() => axios.get(`${process.env.REACT_APP_API}/fetch-pdf`, { responseType: "blob" }))
       .then((res) => {
@@ -153,7 +161,6 @@ const InvoiceDetails = () => {
       })
   }
 
-  // SEND PDF INVOICE VIA EMAIL
   const sendPdf = (e) => {
     e.preventDefault()
     setSendStatus("loading")
@@ -177,6 +184,7 @@ const InvoiceDetails = () => {
         balanceDue: toCommas(total - totalAmountReceived),
         link: `${process.env.REACT_APP_URL}/invoice/${invoice._id}`,
         company: company,
+        quotationCreator: quotationCreator, // Use the state value
       })
       .then(() => setSendStatus("success"))
       .catch((error) => {
@@ -185,7 +193,6 @@ const InvoiceDetails = () => {
       })
   }
 
-  // If no invoice data, show spinner
   if (!invoice) {
     return <Spinner />
   }
@@ -225,7 +232,7 @@ const InvoiceDetails = () => {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
             />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
@@ -267,7 +274,7 @@ const InvoiceDetails = () => {
                       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                     />
                   </svg>
-                  Edit Invoice
+                  Edit Quotation
                 </button>
 
                 <button
@@ -316,11 +323,27 @@ const InvoiceDetails = () => {
                 </div>
               </div>
 
-              {/* Right Side - Date */}
-              <div className="text-right">
+              {/* Right Side - Date and Creator Info */}
+              <div className="text-right space-y-4">
                 <p className="text-gray-700">
                   <strong>Date: {moment(invoice.createdAt || new Date()).format("DD-MM-YYYY")}</strong>
                 </p>
+                
+                {/* Fixed Quotation Creator Display - More robust checking */}
+                {(quotationCreator?.name && quotationCreator.name !== '' && quotationCreator.name !== '—') || 
+                 (quotationCreator?.phone && quotationCreator.phone !== '' && quotationCreator.phone !== '—') ? (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Quotation Creator:</h4>
+                    <div className="space-y-1 text-sm text-gray-600">
+                      {quotationCreator?.name && quotationCreator.name !== '' && quotationCreator.name !== '—' && (
+                        <p><span className="font-medium">Name:</span> {quotationCreator.name}</p>
+                      )}
+                      {quotationCreator?.phone && quotationCreator.phone !== '' && quotationCreator.phone !== '—' && (
+                        <p><span className="font-medium">Phone:</span> {quotationCreator.phone}</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -356,6 +379,9 @@ const InvoiceDetails = () => {
                       <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
                         Discount
                       </th>
+                      <th className="px-3 py-3 text-left text-sm font-bold text-gray-900 border-r border-gray-300">
+                        Warranty
+                      </th>
                       <th className="px-3 py-3 text-left text-sm font-bold text-gray-900">Amount</th>
                     </tr>
                   </thead>
@@ -365,18 +391,6 @@ const InvoiceDetails = () => {
                       const quantity = Number.parseFloat(itemField?.quantity || 0)
                       const discount = Number.parseFloat(itemField?.discount || 0)
                       const itemAmount = unitPrice * quantity * (1 - discount / 100)
-
-                      console.log(`Item ${index + 1} complete data:`, {
-                        brand: itemField?.brand,
-                        parent: itemField?.parent,
-                        itemBrand: itemField?.itemBrand,
-                        image: itemField?.image,
-                        itemImage: itemField?.itemImage,
-                        imageUrl: itemField?.imageUrl,
-                        finalBrand: getBrandName(itemField),
-                        finalImage: getImageUrl(itemField),
-                        fullItem: itemField,
-                      })
 
                       return (
                         <tr key={index} className="border-b border-gray-200">
@@ -398,7 +412,6 @@ const InvoiceDetails = () => {
                             <div className="flex items-center justify-center">
                               {(() => {
                                 const imageUrl = getImageUrl(itemField)
-                                console.log(`Item ${index + 1} final image URL:`, imageUrl)
 
                                 if (imageUrl && isValidImageUrl(imageUrl)) {
                                   return (
@@ -446,7 +459,7 @@ const InvoiceDetails = () => {
                             {itemField?.hsnCode || itemField?.hsn || "84818020"}
                           </td>
                           <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
-                            {unitPrice.toLocaleString()}
+                            ₹{unitPrice.toLocaleString()}
                           </td>
                           <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top text-center">
                             {itemField?.quantity || ""}
@@ -456,6 +469,9 @@ const InvoiceDetails = () => {
                           </td>
                           <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
                             {itemField?.discount || 0}%
+                          </td>
+                          <td className="px-3 py-4 text-sm text-gray-900 border-r border-gray-200 align-top">
+                            {itemField?.warranty || "No Warranty"}
                           </td>
                           <td className="px-3 py-4 text-sm text-gray-900 align-top">₹{itemAmount.toLocaleString()}</td>
                         </tr>
@@ -471,24 +487,24 @@ const InvoiceDetails = () => {
                 <div className="space-y-2 text-right">
                   <div className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="text-sm font-medium text-gray-900">Subtotal:</span>
-                    <span className="text-sm font-medium text-gray-900">{toCommas(subTotal)}</span>
+                    <span className="text-sm font-medium text-gray-900">₹{toCommas(subTotal)}</span>
                   </div>
 
                   <div className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="text-sm font-medium text-gray-900">Tax @ {rates}%:</span>
-                    <span className="text-sm font-medium text-gray-900">{toCommas(vat)}</span>
+                    <span className="text-sm font-medium text-gray-900">₹{toCommas(vat)}</span>
                   </div>
 
                   <div className="flex justify-between items-center py-3 border-t-2 border-gray-400">
                     <span className="text-lg font-bold text-gray-900">Final Amount:</span>
-                    <span className="text-lg font-bold text-gray-900">{toCommas(total)}</span>
+                    <span className="text-lg font-bold text-gray-900">₹{toCommas(total)}</span>
                   </div>
 
                   {totalAmountReceived > 0 && (
                     <>
                       <div className="flex justify-between items-center py-2 border-b border-gray-300">
                         <span className="text-sm font-medium text-gray-900">Amount Received:</span>
-                        <span className="text-sm font-medium text-green-600">{toCommas(totalAmountReceived)}</span>
+                        <span className="text-sm font-medium text-green-600">₹{toCommas(totalAmountReceived)}</span>
                       </div>
 
                       <div className="flex justify-between items-center py-3 border-t-2 border-gray-400">
@@ -505,11 +521,29 @@ const InvoiceDetails = () => {
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Footer with Creator Info */}
             <div className="text-center mt-8 pt-6 border-t border-gray-300">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 mb-2">
                 Thank you for your business! | ATC - Your Trusted Technology Partner
               </p>
+              
+              {/* Fixed Creator Info in Footer - More robust display */}
+              {(quotationCreator?.name && quotationCreator.name !== '' && quotationCreator.name !== '—') || 
+               (quotationCreator?.phone && quotationCreator.phone !== '' && quotationCreator.phone !== '—') ? (
+                <div className="text-xs text-gray-500 mt-4 pt-2 border-t border-gray-200">
+                  <p>
+                    Quotation prepared by:{" "}
+                    {quotationCreator?.name && quotationCreator.name !== '' && quotationCreator.name !== '—' && (
+                      <span className="font-medium">{quotationCreator.name}</span>
+                    )}
+                    {quotationCreator?.name && quotationCreator.name !== '' && quotationCreator.name !== '—' && 
+                     quotationCreator?.phone && quotationCreator.phone !== '' && quotationCreator.phone !== '—' && " | "}
+                    {quotationCreator?.phone && quotationCreator.phone !== '' && quotationCreator.phone !== '—' && (
+                      <span>Contact: {quotationCreator.phone}</span>
+                    )}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

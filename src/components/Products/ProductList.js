@@ -257,15 +257,16 @@ const TallyStockDashboard = () => {
     return "Pcs"
   }
 
+  
   const groupStockData = (data) => {
     const grouped = {}
 
     data.forEach((item, index) => {
-      // Get parent group from PARENT field or use "OTHER" as default
-      let parentGroup = "OFFINE SAVED PRODUCTS"
+      // Get parent group from PARENT field - keep exact same logic for both online/offline
+      let parentGroup = "OFFLINE SAVED STOCK ITEMS"
 
-      if (item.parent && typeof item.parent === 'string') {
-        parentGroup = item.parent.toUpperCase()
+      if (item.parent && typeof item.parent === 'string' && item.parent.trim() !== '' && item.parent.trim() !== '{}') {
+        parentGroup = item.parent.toUpperCase().trim()
       }
 
       // Initialize parent group if not exists
@@ -295,79 +296,129 @@ const TallyStockDashboard = () => {
       const result = await response.json()
 
       if (!result.success) {
+        // If API call fails, try to get cached data
+        console.warn("API call failed, attempting to get cached data:", result.message)
+        
+        // Check if we have database connection for offline data
+        const connectionCheck = await checkConnection()
+        if (connectionCheck && connectionCheck.database.connected && connectionCheck.database.totalItems > 0) {
+          // Try to fetch database/cached data
+          try {
+            const cachedResponse = await fetch(`${API_BASE}/stock-rates?source=database`, {
+              method: "GET",
+            })
+            const cachedResult = await cachedResponse.json()
+            
+            if (cachedResult.success) {
+              processStockData(cachedResult, "DATABASE")
+              return
+            }
+          } catch (cachedErr) {
+            console.warn("Failed to fetch cached data:", cachedErr)
+          }
+        }
+        
         throw new Error(result.message || "Failed to fetch stock rates")
       }
 
-      // Set data source info
-      setDataSource(result.data?.source || "UNKNOWN")
+      processStockData(result, result.data?.source || "TALLY")
 
-      // Try different possible response structures
-      const stockItems = result.data?.stockItems || []
-
-      console.log("[v0] Raw API response sample:", stockItems.slice(0, 2))
-
-      if (stockItems && Array.isArray(stockItems) && stockItems.length > 0) {
-        // Transform the data
-        const transformedData = stockItems.map((item, index) => {
-          const itemName = item.NAME || item.name || item.DSPDISPNAME || item.particulars || `Item ${index + 1}`
-          const baseUnits = item.BASEUNITS?._ || item.BASEUNITS || item.baseUnits || item.UNIT || item.unit || "Pcs"
-          const parentGroup = item.PARENT?._ || item.PARENT || item.parent || "OTHER"
-          const hsnCode = item.HSNCODE?._ || item.HSNCODE || item.hsnCode || item.hsn || ""
-
-          // Parse prices
-          const priceResult = parsePrice(item, "price")
-
-          const itemId = item.tallyId || (item._id ? item._id.toString() : null) || `item_${index}`
-
-          
-
-          const transformedItem = {
-            id: itemId,
-            name: itemName,
-            baseUnits: baseUnits,
-            parent: parentGroup,
-            hsnCode: hsnCode,
-            standardPrice: priceResult.value,
-            priceUnit: priceResult.unit,
-            index: index,
-            tallyId: item.tallyId,
-            mongoId: item._id,
-          }
-
-          // Detect the best unit to use
-          transformedItem.displayUnit = detectUnit(transformedItem)
-
-          return transformedItem
-        })
-
-        console.log(
-          "[v0] Final transformed data sample:",
-          transformedData.slice(0, 3).map((item) => ({
-            id: item.id,
-            name: item.name,
-            tallyId: item.tallyId,
-            mongoId: item.mongoId,
-          })),
-        )
-
-        setStockData(transformedData)
-        setFilteredData(transformedData)
-        setGroupedData(groupStockData(transformedData))
-        setLastUpdated(new Date().toLocaleString())
-        setError("")
-      } else {
-        setError("No stock items found")
-        setStockData([])
-        setFilteredData([])
-        setGroupedData({})
-      }
     } catch (err) {
+      console.error("Error fetching stock rates:", err)
+      
+      // Last resort: try to get any available data
+      try {
+        const fallbackResponse = await fetch(`${API_BASE}/stock-rates?fallback=true`, {
+          method: "GET",
+        })
+        const fallbackResult = await fallbackResponse.json()
+        
+        if (fallbackResult.success && fallbackResult.data?.stockItems?.length > 0) {
+          processStockData(fallbackResult, fallbackResult.data?.source || "DATABASE")
+          return
+        }
+      } catch (fallbackErr) {
+        console.warn("Fallback data fetch failed:", fallbackErr)
+      }
+      
       setError(`Error fetching stock rates: ${err.message}`)
       setStockData([])
       setFilteredData([])
       setGroupedData({})
     } finally {
       setLoading(false)
+    }
+  }
+
+  const processStockData = (result, source) => {
+    // Set data source info
+    setDataSource(source)
+
+    // Try different possible response structures
+    const stockItems = result.data?.stockItems || result.data?.items || result.data || []
+
+    console.log(`[v0] Processing ${source} data - Raw API response sample:`, stockItems.slice(0, 2))
+
+    if (stockItems && Array.isArray(stockItems) && stockItems.length > 0) {
+      // Transform the data
+      const transformedData = stockItems.map((item, index) => {
+        // Handle nested object structures for all fields
+        const itemName = formatValue(item.NAME || item.name || item.DSPDISPNAME || item.particulars || `Item ${index + 1}`)
+        const baseUnits = formatValue(item.BASEUNITS?._ || item.BASEUNITS || item.baseUnits || item.UNIT || item.unit || "Pcs")
+        const parentGroup = formatValue(item.PARENT?._ || item.PARENT || item.parent || item.category || "")
+        const hsnCode = formatValue(item.HSNCODE?._ || item.HSNCODE || item.hsnCode || item.hsn || "")
+
+        // Parse prices
+        const priceResult = parsePrice(item, "price")
+
+        const itemId = item.tallyId || (item._id ? item._id.toString() : null) || `item_${index}`
+
+        const transformedItem = {
+          id: itemId,
+          name: itemName,
+          baseUnits: baseUnits,
+          parent: parentGroup,
+          hsnCode: hsnCode,
+          standardPrice: priceResult.value,
+          priceUnit: priceResult.unit,
+          index: index,
+          tallyId: item.tallyId,
+          mongoId: item._id,
+          source: source, // Add source info to each item
+        }
+
+        // Detect the best unit to use
+        transformedItem.displayUnit = detectUnit(transformedItem)
+
+        return transformedItem
+      })
+
+      console.log(
+        `[v0] Final transformed ${source} data sample:`,
+        transformedData.slice(0, 3).map((item) => ({
+          id: item.id,
+          name: item.name,
+          parent: item.parent,
+          source: item.source,
+          tallyId: item.tallyId,
+          mongoId: item.mongoId,
+        })),
+      )
+
+      setStockData(transformedData)
+      setFilteredData(transformedData)
+      setGroupedData(groupStockData(transformedData))
+      setLastUpdated(new Date().toLocaleString())
+      setError("")
+    } else {
+      const errorMsg = source === "DATABASE" || source === "CACHE" 
+        ? "No cached stock data available" 
+        : "No stock items found"
+      
+      setError(errorMsg)
+      setStockData([])
+      setFilteredData([])
+      setGroupedData({})
     }
   }
 
@@ -424,12 +475,28 @@ const TallyStockDashboard = () => {
       setFilteredData(filtered)
       setGroupedData(groupStockData(filtered))
     }
-  }, [searchTerm, stockData])
+  }, [searchTerm, stockData, dataSource]) // Add dataSource dependency
 
   const formatValue = (value) => {
     if (value === null || value === undefined || value === "") {
       return ""
     }
+    
+    // Handle objects with _ property (Tally data structure)
+    if (typeof value === "object" && value !== null) {
+      if (value._ !== undefined) {
+        return String(value._)
+      }
+      if (value.VALUE !== undefined) {
+        return String(value.VALUE)
+      }
+      if (value.NAME !== undefined) {
+        return String(value.NAME)
+      }
+      // If it's still an object, convert to JSON string as fallback
+      return JSON.stringify(value)
+    }
+    
     return String(value)
   }
 
@@ -601,8 +668,10 @@ const TallyStockDashboard = () => {
                   </span>
                 )}
               </div>
-              {!connectionStatus.tally.connected && (
-                <span className="text-amber-600 font-medium">Tally offline - showing cached data</span>
+              {!connectionStatus.tally.connected && stockData.length > 0 && (
+                <span className="text-amber-600 font-medium">
+                  Tally offline - showing cached data ({stockData.length} items)
+                </span>
               )}
             </div>
           </div>
@@ -670,7 +739,11 @@ const TallyStockDashboard = () => {
                         )}
                         <Building2 className="w-4 h-4 text-blue-600" />
                         <div>
-                          <h2 className="text-lg font-semibold text-gray-900">{groupName}</h2>
+                        <h2 className="text-lg font-semibold text-gray-900">
+  {groupName.trim() === "" || groupName === "UNCATEGORIZED"
+    ? "OFFLINE SAVED STOCK ITEM"
+    : groupName}
+</h2>
                           <p className="text-sm text-gray-600">
                             {groupStats.totalItems} items • Avg Rate: ₹
                             {(groupStats.totalValue / groupStats.totalItems || 0).toFixed(2)}
