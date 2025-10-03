@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useDispatch, useSelector } from "react-redux"
 import { useParams } from "react-router-dom"
 import moment from "moment"
@@ -25,33 +25,29 @@ const enhancedInitialState = {
       description: "",
       hsnCode: "",
       unitPrice: "",
-      quantity: "1", // Set default quantity to 1
+      quantity: "1",
       unit: "pcs",
       discount: "",
       amount: "",
       image: "",
-      grandGroup: "", // Brand/Parent from Tally
-      warranty: "", // Added warranty field
+      grandGroup: "",
+      warranty: "",
     },
   ],
 }
 
-// Updated API Base URL for your product search
-const API_BASE_URL = process.env.REACT_APP_API || "https://invoice-56iv.onrender.com"
+const API_BASE_URL = process.env.REACT_APP_API || "https://backend.arihanttradecentre.com"
 
 const normalizeImageUrl = (raw) => {
   if (!raw) return ""
 
   let url = String(raw).trim()
-  // If a duplicated base occurs like "http://base/http://base/…", keep from the last http(s)
   const lastHttp = Math.max(url.lastIndexOf("http://"), url.lastIndexOf("https://"))
   if (lastHttp > 0) url = url.slice(lastHttp)
 
-  // If already absolute, return as-is
   if (url.startsWith("http://") || url.startsWith("https://")) return url
 
-  // Otherwise prefix with API base
-  const base = API_BASE_URL || "https://invoice-56iv.onrender.com"
+  const base = API_BASE_URL || "https://backend.arihanttradecentre.com"
   return `${base}${url.startsWith("/") ? "" : "/"}${url}`
 }
 
@@ -75,9 +71,74 @@ const useDebounce = (value, delay) => {
   return debouncedValue
 }
 
+// Optimized filtering with strict matching for exact relevance
+const filterAndSortProducts = (products, searchTerm) => {
+  if (!searchTerm || !Array.isArray(products)) return products
+
+  const term = searchTerm.toLowerCase().trim()
+  const words = term.split(/\s+/).filter(Boolean)
+
+  const scored = products.map((product) => {
+    const itemName = (product.itemName || "").toLowerCase()
+    const brand = (product.brand || "").toLowerCase()
+    const itemCode = (product.itemCode || "").toLowerCase()
+
+    let score = 0
+
+    // Exact match (highest priority)
+    if (itemName === term) score += 10000
+
+    // Starts with exact term
+    if (itemName.startsWith(term)) score += 5000
+
+    // Check if ALL words are present in itemName (STRICT MATCHING)
+    const allWordsPresent = words.every((word) => itemName.includes(word))
+    if (!allWordsPresent) return { ...product, score: 0 } // Must contain all words
+
+    // All words in order
+    const wordsInOrder = words.every((word, idx) => {
+      if (idx === 0) return itemName.includes(word)
+      const prevWord = words[idx - 1]
+      const prevPos = itemName.indexOf(prevWord)
+      const currPos = itemName.indexOf(word)
+      return currPos > prevPos
+    })
+    if (wordsInOrder) score += 2000
+
+    // Words proximity (closer = better)
+    let totalDistance = 0
+    for (let i = 0; i < words.length - 1; i++) {
+      const pos1 = itemName.indexOf(words[i])
+      const pos2 = itemName.indexOf(words[i + 1])
+      if (pos1 >= 0 && pos2 >= 0) {
+        totalDistance += Math.abs(pos2 - pos1)
+      }
+    }
+    if (totalDistance > 0) {
+      score += Math.max(0, 1000 - totalDistance * 10)
+    }
+
+    // Word matches
+    words.forEach((word) => {
+      if (itemName.includes(word)) score += 100
+      if (brand.includes(word)) score += 50
+      if (itemCode.includes(word)) score += 30
+    })
+
+    // Penalty for many extra words
+    const extraWords = itemName.split(/\s+/).length - words.length
+    if (extraWords > 3) score -= extraWords * 20
+
+    return { ...product, score }
+  })
+
+  // Only return products with score > 0, sorted, limited to top 20
+  return scored.filter((p) => p.score > 0).sort((a, b) => b.score - a.score).slice(0, 20)
+}
+
 const Invoice = () => {
   const [invoiceData, setInvoiceData] = useState(enhancedInitialState)
-  const [rates, setRates] = useState(18) // Default GST rate
+  const [rates, setRates] = useState(18)
   const [vat, setVat] = useState(0)
   const [currency, setCurrency] = useState(currencies[0].value)
   const [subTotal, setSubTotal] = useState(0)
@@ -88,22 +149,24 @@ const Invoice = () => {
   const [type, setType] = useState("Quotation")
   const [status, setStatus] = useState("")
 
-  // Customer search states - exactly like products pattern
+  // Customer search states
   const [customerSearchTerm, setCustomerSearchTerm] = useState("")
   const [customerSearchResults, setCustomerSearchResults] = useState([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
-  const [customerCache, setCustomerCache] = useState(new Map()) // Cache for customers
+  const [customerCache, setCustomerCache] = useState(new Map())
 
-  // Optimized product search states (unchanged - working fine)
-  const [productCache, setProductCache] = useState(new Map()) // Cache for loaded products
-  const [searchResults, setSearchResults] = useState({}) // Search results per row
-  const [loadingSearch, setLoadingSearch] = useState({}) // Loading state per row
-  const [searchTerms, setSearchTerms] = useState({}) // Track search terms per row
+  // Optimized product search states
+  const [productCache, setProductCache] = useState(new Map())
+  const [searchResults, setSearchResults] = useState({})
+  const [loadingSearch, setLoadingSearch] = useState({})
+  const [searchTerms, setSearchTerms] = useState({})
   const [showSuggestions, setShowSuggestions] = useState({})
+  const [lastSearchLength, setLastSearchLength] = useState({}) // Track search length
+  const abortControllersRef = useRef({})
 
-  const debouncedSearchTerms = useDebounce(searchTerms, 300)
-  const debouncedCustomerSearchTerm = useDebounce(customerSearchTerm, 300) // Same pattern as products
+  const debouncedSearchTerms = useDebounce(searchTerms, 250) // Faster debounce
+  const debouncedCustomerSearchTerm = useDebounce(customerSearchTerm, 300)
 
   const { id } = useParams()
   const clients = useSelector((state) => state.clients.clients)
@@ -121,29 +184,37 @@ const Invoice = () => {
   const creatorName = (user && (user.result?.name || user.name)) || "—"
   const creatorPhone = (user && (user.result?.phone || user.result?.mobile || user.phone)) || "—"
 
-  // Updated product search function to use your specific API - MOVED BEFORE useEffect
+  // Optimized product search with smart trigger
   const searchProducts = useCallback(
     async (searchTerm, rowIndex) => {
+      // Cancel previous request for this row
+      if (abortControllersRef.current[rowIndex]) {
+        abortControllersRef.current[rowIndex].abort()
+      }
+
       if (!searchTerm || searchTerm.length < 2) {
         setSearchResults((prev) => ({ ...prev, [rowIndex]: [] }))
+        setLoadingSearch((prev) => ({ ...prev, [rowIndex]: false }))
         return
       }
 
-      // Check cache first
-      const cacheKey = searchTerm.toLowerCase()
+      // Check cache first (instant response)
+      const cacheKey = searchTerm.toLowerCase().trim()
       if (productCache.has(cacheKey)) {
         const cachedResults = productCache.get(cacheKey)
         setSearchResults((prev) => ({
           ...prev,
           [rowIndex]: Array.isArray(cachedResults) ? cachedResults : [],
         }))
+        setLoadingSearch((prev) => ({ ...prev, [rowIndex]: false }))
         return
       }
 
+      const controller = new AbortController()
+      abortControllersRef.current[rowIndex] = controller
       setLoadingSearch((prev) => ({ ...prev, [rowIndex]: true }))
 
       try {
-        // Updated API call to match your endpoint structure
         const response = await fetch(
           `${API_BASE_URL}/api/tally/stock-rates/search?q=${encodeURIComponent(searchTerm)}`,
           {
@@ -152,6 +223,7 @@ const Invoice = () => {
               "Content-Type": "application/json",
               ...(user?.token && { Authorization: `Bearer ${user.token}` }),
             },
+            signal: controller.signal,
           },
         )
 
@@ -160,29 +232,18 @@ const Invoice = () => {
         }
 
         const result = await response.json()
-        console.log("API Response:", result) // For debugging
-        console.log("API Response keys:", Object.keys(result)) // Debug structure
 
-        // Handle your specific API response structure
         let products = []
-
-        // Your API returns: {"success": true, "data": [...]}
         if (result.success && Array.isArray(result.data)) {
           products = result.data
-        }
-        // Fallback for other possible formats
-        else if (Array.isArray(result)) {
+        } else if (Array.isArray(result)) {
           products = result
         } else if (result.products && Array.isArray(result.products)) {
           products = result.products
-        } else {
-          console.warn("Unexpected API response structure:", result)
-          products = []
         }
 
-        // Transform products to match our required format - FIXED MAPPING
+        // Transform products
         const transformedProducts = products.map((item) => {
-          // Prefer explicit image fields and normalize
           let imageUrl = ""
           const candidate =
             item.image ??
@@ -195,15 +256,11 @@ const Invoice = () => {
 
           if (candidate) imageUrl = normalizeImageUrl(candidate)
 
-          console.log(
-            `Product: ${item.itemName || item.name}, Original Image: "${item.image}", Final URL: "${imageUrl}"`,
-          )
-
           return {
             itemCode: String(item.itemCode || item.tallyId || ""),
             itemName: String(item.itemName || item.name || item.displayName || ""),
             brand: String(item.brand || item.grandGroup || item.stockGroup || item.group || ""),
-            hsnCode: pickHSN(item), // <— robust HSN mapping
+            hsnCode: pickHSN(item),
             unitPrice: Number(item.unitPrice ?? item.standardPrice ?? 0),
             unit: String(item.unit || item.baseUnits || "pcs"),
             description: String(item.description || item.itemName || item.name || ""),
@@ -217,29 +274,30 @@ const Invoice = () => {
           }
         })
 
-        console.log("Transformed products:", transformedProducts)
+        // Apply strict filtering and sorting
+        const filteredProducts = filterAndSortProducts(transformedProducts, searchTerm)
 
         // Cache the results
-        setProductCache((prev) => new Map(prev.set(cacheKey, transformedProducts)))
+        setProductCache((prev) => new Map(prev.set(cacheKey, filteredProducts)))
         setSearchResults((prev) => ({
           ...prev,
-          [rowIndex]: transformedProducts,
+          [rowIndex]: filteredProducts,
         }))
       } catch (error) {
-        console.error("Error searching products from API:", error)
-        // Show user-friendly error message
+        if (error.name === "AbortError") {
+          return
+        }
+        console.error("Error searching products:", error)
         setSearchResults((prev) => ({ ...prev, [rowIndex]: [] }))
-
-        // Optional: Show toast notification to user
-        // You can add a toast notification here if you have a toast system
       } finally {
         setLoadingSearch((prev) => ({ ...prev, [rowIndex]: false }))
+        delete abortControllersRef.current[rowIndex]
       }
     },
     [productCache, user],
   )
 
-  // Customer search function - exactly like products pattern
+  // Customer search function
   const searchCustomers = useCallback(
     async (searchTerm) => {
       if (!searchTerm || searchTerm.length < 2) {
@@ -247,7 +305,6 @@ const Invoice = () => {
         return
       }
 
-      // Check cache first - same as products
       const cacheKey = searchTerm.toLowerCase()
       if (customerCache.has(cacheKey)) {
         const cachedResults = customerCache.get(cacheKey)
@@ -271,28 +328,20 @@ const Invoice = () => {
         }
 
         const result = await response.json()
-        console.log("Customer API Response:", result) // For debugging
 
         let customers = []
-        // Handle API response structure - same as products
         if (result.success && Array.isArray(result.data)) {
           customers = result.data
         } else if (Array.isArray(result)) {
           customers = result
         } else if (result.clients && Array.isArray(result.clients)) {
           customers = result.clients
-        } else {
-          console.warn("Unexpected Customer API response structure:", result)
-          customers = []
         }
 
-        console.log("Transformed customers:", customers) // For debugging
-
-        // Cache the results - same as products
         setCustomerCache((prev) => new Map(prev.set(cacheKey, customers)))
         setCustomerSearchResults(customers)
       } catch (error) {
-        console.error("Error searching customers from API:", error)
+        console.error("Error searching customers:", error)
         setCustomerSearchResults([])
       } finally {
         setLoadingCustomers(false)
@@ -301,24 +350,34 @@ const Invoice = () => {
     [customerCache, user],
   )
 
-  // Effect for debounced product search - NOW AFTER searchProducts declaration
+  // Smart search trigger - only search when typing forward or meaningful change
   useEffect(() => {
     Object.keys(debouncedSearchTerms).forEach((rowIndex) => {
       const searchTerm = debouncedSearchTerms[rowIndex]
-      if (searchTerm && searchTerm.length >= 2) {
-        searchProducts(searchTerm, rowIndex)
+      const prevLength = lastSearchLength[rowIndex] || 0
+      const currentLength = searchTerm ? searchTerm.length : 0
+
+      // Only trigger search if:
+      // 1. Length >= 2
+      // 2. User is typing forward (not backspacing)
+      // 3. OR it's a fresh search (prevLength was 0)
+      if (searchTerm && currentLength >= 2) {
+        if (currentLength >= prevLength || prevLength === 0) {
+          searchProducts(searchTerm, rowIndex)
+        }
       }
+
+      // Update last search length
+      setLastSearchLength((prev) => ({ ...prev, [rowIndex]: currentLength }))
     })
   }, [debouncedSearchTerms, searchProducts])
 
-  // Effect for debounced customer search - exactly like products pattern
   useEffect(() => {
     if (debouncedCustomerSearchTerm && debouncedCustomerSearchTerm.length >= 2) {
       searchCustomers(debouncedCustomerSearchTerm)
     }
   }, [debouncedCustomerSearchTerm, searchCustomers])
 
-  // Select customer function
   const selectCustomer = (selectedClient) => {
     setClient(selectedClient)
     setCustomerSearchTerm(selectedClient.name)
@@ -340,7 +399,7 @@ const Invoice = () => {
         let imageUrl = imageResult?.imageUrl ?? imageResult?.image ?? imageResult?.data?.imageUrl ?? ""
 
         if (imageUrl) {
-          imageUrl = normalizeImageUrl(imageUrl) // normalize before setting
+          imageUrl = normalizeImageUrl(imageUrl)
           setInvoiceData((prev) => {
             const newItems = [...prev.items]
             if (newItems[itemIndex]) {
@@ -380,9 +439,7 @@ const Invoice = () => {
 
   const selectTallyProduct = useCallback(
     (product, index) => {
-      console.log("Selecting product:", product)
-      console.log("Product fields available:", Object.keys(product))
-
+      // Immediate UI update for fast response
       const values = [...invoiceData.items]
 
       const resolvedImage = normalizeImageUrl(
@@ -405,11 +462,11 @@ const Invoice = () => {
         ),
         itemName: String(product.itemName || values[index].itemName || ""),
         description: String(product.description || product.itemName || values[index].description || ""),
-        hsnCode: pickHSN(product) || String(values[index].hsnCode || ""), // ensure HSN fills
+        hsnCode: pickHSN(product) || String(values[index].hsnCode || ""),
         unitPrice: String(product.unitPrice ?? values[index].unitPrice ?? "0"),
         unit: String(product.unit || values[index].unit || "pcs"),
         discount: String(values[index].discount || "0"),
-        image: resolvedImage, // ensure image fills
+        image: resolvedImage,
         grandGroup: String(product.grandGroup || values[index].grandGroup || ""),
         warranty: String(product.warranty ?? values[index].warranty ?? ""),
         quantity: values[index].quantity || "1",
@@ -422,12 +479,13 @@ const Invoice = () => {
       const discountAmount = (quantity * unitPrice * discountPercent) / 100
       values[index].amount = Math.max(0, quantity * unitPrice - discountAmount)
 
-      console.log("Updated item values:", values[index])
-
+      // Immediate state update
       setInvoiceData({ ...invoiceData, items: values })
       setShowSuggestions((prev) => ({ ...prev, [index]: false }))
       setSearchTerms((prev) => ({ ...prev, [index]: String(product.itemName || "") }))
+      setLoadingSearch((prev) => ({ ...prev, [index]: false })) // Stop loading immediately
 
+      // Load image asynchronously if needed
       if (product.id && !resolvedImage) {
         loadProductImage(product.id, index)
       }
@@ -446,13 +504,17 @@ const Invoice = () => {
     const values = [...invoiceData.items]
     values[index][e.target.name] = e.target.value
 
-    // Handle item name changes for search
     if (e.target.name === "itemName") {
-      setSearchTerms((prev) => ({ ...prev, [index]: e.target.value }))
-      setShowSuggestions((prev) => ({
-        ...prev,
-        [index]: e.target.value.length >= 2,
-      }))
+      const newValue = e.target.value
+      setSearchTerms((prev) => ({ ...prev, [index]: newValue }))
+      
+      // Show suggestions only if typing forward and length >= 2
+      if (newValue.length >= 2) {
+        setShowSuggestions((prev) => ({ ...prev, [index]: true }))
+      } else {
+        setShowSuggestions((prev) => ({ ...prev, [index]: false }))
+        setSearchResults((prev) => ({ ...prev, [index]: [] }))
+      }
     }
 
     if (["quantity", "unitPrice", "discount"].includes(e.target.name)) {
@@ -460,13 +522,11 @@ const Invoice = () => {
       const unitPrice = Number.parseFloat(values[index].unitPrice) || 0
       const discount = Number.parseFloat(values[index].discount) || 0
 
-      // Validate inputs
       if (quantity < 0) values[index].quantity = "0"
       if (unitPrice < 0) values[index].unitPrice = "0"
       if (discount < 0) values[index].discount = "0"
       if (discount > 100) values[index].discount = "100"
 
-      // Calculate amount with proper validation
       const validQuantity = Math.max(0, Number.parseFloat(values[index].quantity) || 0)
       const validUnitPrice = Math.max(0, Number.parseFloat(values[index].unitPrice) || 0)
       const validDiscount = Math.min(Math.max(Number.parseFloat(values[index].discount) || 0, 0), 100)
@@ -479,10 +539,8 @@ const Invoice = () => {
     }
 
     setInvoiceData({ ...invoiceData, items: values })
-    console.log("State updated with:", { ...invoiceData, items: values })
   }
 
-  // Handle image error
   const handleImageError = (index) => {
     const values = [...invoiceData.items]
     values[index].image = ""
@@ -495,7 +553,6 @@ const Invoice = () => {
     if (!trimmedUrl) return false
 
     try {
-      // Check for common image extensions
       const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"]
       const lowerUrl = trimmedUrl.toLowerCase()
       const hasImageExtension = imageExtensions.some((ext) => lowerUrl.includes(ext))
@@ -547,13 +604,13 @@ const Invoice = () => {
           description: "",
           hsnCode: "",
           unitPrice: "",
-          quantity: "1", // Set default quantity to 1 for new items
+          quantity: "1",
           unit: "pcs",
           discount: "",
           amount: "",
           image: "",
           grandGroup: "",
-          warranty: "", // Added warranty field for new items
+          warranty: "",
         },
       ],
     }))
@@ -582,6 +639,11 @@ const Invoice = () => {
       const newResults = { ...prev }
       delete newResults[index]
       return newResults
+    })
+    setLastSearchLength((prev) => {
+      const newLength = { ...prev }
+      delete newLength[index]
+      return newLength
     })
 
     setInvoiceData((prevState) => ({ ...prevState, items: renumberedValues }))
@@ -725,7 +787,6 @@ const Invoice = () => {
                           const value = e.target.value
                           setCustomerSearchTerm(value)
 
-                          // Show suggestions if length >= 2 - same as products
                           if (value.length >= 2) {
                             setShowCustomerSuggestions(true)
                           } else {
@@ -740,7 +801,6 @@ const Invoice = () => {
                           }
                         }}
                         onBlur={() => {
-                          // Delay hiding suggestions to allow clicking
                           setTimeout(() => {
                             setShowCustomerSuggestions(false)
                           }, 200)
@@ -749,14 +809,12 @@ const Invoice = () => {
                         autoComplete="off"
                       />
 
-                      {/* Loading indicator for customer search */}
                       {loadingCustomers && (
                         <div className="absolute right-2 top-2 z-10">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                         </div>
                       )}
 
-                      {/* Customer search suggestions - same style as products */}
                       {showCustomerSuggestions && customerSearchResults.length > 0 && (
                         <div className="absolute z-[9999] top-full left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-xl max-h-60 overflow-y-auto min-w-[400px]">
                           {customerSearchResults.map((customer, index) => (
@@ -798,7 +856,6 @@ const Invoice = () => {
                         </div>
                       )}
 
-                      {/* Show "No customers found" message */}
                       {showCustomerSuggestions &&
                         customerSearchResults.length === 0 &&
                         customerSearchTerm.length >= 2 &&
@@ -963,7 +1020,6 @@ const Invoice = () => {
                               id={`itemName-${index}`}
                             />
 
-                            {/* Loading indicator for search */}
                             {loadingSearch[index] && (
                               <div className="absolute right-2 top-2 z-10">
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -1004,7 +1060,6 @@ const Invoice = () => {
                                         </div>
                                       </div>
 
-                                      {/* Product Details */}
                                       <div className="flex-1 min-w-0">
                                         <div className="font-medium text-sm text-gray-900 mb-1 truncate">
                                           {product.itemName || "Unknown Item"}
@@ -1054,7 +1109,6 @@ const Invoice = () => {
                               </div>
                             )}
 
-                            {/* Show "No results found" message */}
                             {showSuggestions[index] &&
                               searchResults[index] &&
                               searchResults[index].length === 0 &&
@@ -1062,7 +1116,17 @@ const Invoice = () => {
                               searchTerms[index].length >= 2 &&
                               !loadingSearch[index] && (
                                 <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg p-3 text-center text-gray-500 text-sm">
-                                  No products found for "{searchTerms[index]}"
+                                  <div className="flex items-center justify-center space-x-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                      />
+                                    </svg>
+                                    <span>No products found</span>
+                                  </div>
                                 </div>
                               )}
                           </div>
@@ -1113,7 +1177,7 @@ const Invoice = () => {
                             name="quantity"
                             className="w-full text-sm p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             onChange={(e) => handleChange(index, e)}
-                            value={itemField.quantity || "1"} // Default to 1 if empty
+                            value={itemField.quantity || "1"}
                             placeholder="1"
                           />
                         </td>
@@ -1165,7 +1229,7 @@ const Invoice = () => {
                         </td>
                         <td className="border-r border-gray-200 px-3 py-4 text-right">
                           <span className="text-sm font-medium text-gray-900">
-                            ₹{typeof itemField.amount === "number" ? toCommas(itemField.amount) : toCommas(0)}
+                            {typeof itemField.amount === "number" ? toCommas(itemField.amount) : toCommas(0)}
                           </span>
                         </td>
                         <td className="px-3 py-4 text-center">
@@ -1190,7 +1254,6 @@ const Invoice = () => {
                 </table>
               </div>
 
-              {/* Add Item Button */}
               <div className="border-t border-gray-200 p-4 text-center bg-gray-50">
                 <button
                   type="button"
@@ -1206,7 +1269,6 @@ const Invoice = () => {
           {/* Bottom Section with Settings and Summary */}
           <div className="p-6 border-t border-gray-200 bg-gray-50">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Left Side - Settings */}
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -1230,7 +1292,6 @@ const Invoice = () => {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex space-x-4">
                   <button
                     type="button"
@@ -1273,21 +1334,20 @@ const Invoice = () => {
                 </div>
               </div>
 
-              {/* Right Side - Summary */}
               <div className="flex justify-end">
                 <div className="w-full max-w-sm">
                   <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Subtotal:</span>
                       <span className="font-medium text-gray-900">
-                        ₹{typeof subTotal === "number" ? toCommas(subTotal) : toCommas(0)}
+                        {typeof subTotal === "number" ? toCommas(subTotal) : toCommas(0)}
                       </span>
                     </div>
 
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">GST ({rates}%):</span>
                       <span className="font-medium text-gray-900">
-                        ₹{typeof vat === "number" ? toCommas(vat) : toCommas(0)}
+                        {typeof vat === "number" ? toCommas(vat) : toCommas(0)}
                       </span>
                     </div>
 
@@ -1296,7 +1356,7 @@ const Invoice = () => {
                     <div className="flex justify-between items-center text-lg">
                       <span className="font-semibold text-gray-800">Total:</span>
                       <span className="font-bold text-gray-900">
-                        ₹{typeof total === "number" ? toCommas(total) : toCommas(0)}
+                        {typeof total === "number" ? toCommas(total) : toCommas(0)}
                       </span>
                     </div>
                   </div>

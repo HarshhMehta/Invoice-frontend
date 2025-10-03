@@ -19,6 +19,9 @@ import Forgot from './components/Password/Forgot';
 import Reset from './components/Password/Reset';
 import ProductManager from './components/Products/ProductManager.js';
 import FollowUpDashboard from './components/FollowUp/FollowUpDashboard.js';
+import CashBookSystem from './components/Cashbook/Cashbook.js';
+
+
 
 // Create theme with proper spacing function
 const theme = createTheme({
@@ -60,6 +63,7 @@ function App() {
               <Route path="/settings" exact component={Settings} />
               <Route path="/dashboard" exact component={Dashboard} />
               <Route path="/customers" exact component={ClientList} />
+              <Route path="/cashbook" exact component={CashBookSystem} />
               <Route path="/forgot" exact component={Forgot} />
               <Route path="/reset/:token" exact component={Reset} />
 

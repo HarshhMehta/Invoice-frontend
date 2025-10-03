@@ -33,9 +33,17 @@ const InvoiceDetails = () => {
   const history = useHistory()
   const [sendStatus, setSendStatus] = useState(null)
   const [downloadStatus, setDownloadStatus] = useState(null)
+  const [whatsappStatus, setWhatsappStatus] = useState(null) // New state for WhatsApp sending
   const { enqueueSnackbar } = useSnackbar()
   const user = JSON.parse(localStorage.getItem("profile"))
   const [open, setOpen] = useState(false)
+
+  // WhatsApp API configuration
+  const WHATSAPP_CONFIG = {
+    AUTH_KEY: "ARIHANTXX1ASD",
+    INSTANCE_ID: "286857",
+    API_URL: "https://wapi.co.in/sendMessage.php"
+  }
 
   useEffect(() => {
     dispatch(getInvoice(id))
@@ -99,7 +107,7 @@ const InvoiceDetails = () => {
     }
 
     if (trimmedUrl.startsWith("/")) {
-      const API_BASE_URL = process.env.REACT_APP_API || "https://invoice-56iv.onrender.com"
+      const API_BASE_URL = process.env.REACT_APP_API || "http://localhost:8000"
       return `${API_BASE_URL}${trimmedUrl}`
     }
 
@@ -126,17 +134,91 @@ const InvoiceDetails = () => {
     }
   }
 
+  // Function to format phone number for WhatsApp (ensure it starts with country code)
+  const formatPhoneForWhatsApp = (phone) => {
+    if (!phone) return null
+    
+    // Remove all non-numeric characters
+    const cleanPhone = phone.replace(/\D/g, '')
+    
+    // If phone starts with 91, return as is
+    if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+      return cleanPhone
+    }
+    
+    // If phone is 10 digits, add 91 prefix
+    if (cleanPhone.length === 10) {
+      return `91${cleanPhone}`
+    }
+    
+    // If phone already has country code but not 91, return as is
+    if (cleanPhone.length > 10) {
+      return cleanPhone
+    }
+    
+    return null
+  }
+
   const createAndDownloadPdf = () => {
     setDownloadStatus("loading")
+    
+    // Use SAME data structure as email and WhatsApp
+    const invoiceData = {
+      name: invoice.client?.name || "",
+      address: invoice.client?.address || "",
+      phone: invoice.client?.phone || "",
+      email: invoice.client?.email || "",
+      dueDate: invoice.dueDate,
+      date: invoice.createdAt,
+      id: invoice.invoiceNumber || invoice._id, // Use invoiceNumber like email
+      notes: invoice.notes,
+      subTotal: toCommas(invoice.subTotal),
+      total: toCommas(invoice.total),
+      type: invoice.type,
+      vat: invoice.vat,
+      items: invoice.items || [],
+      status: invoice.status,
+      totalAmountReceived: toCommas(totalAmountReceived),
+      balanceDue: toCommas(total - totalAmountReceived),
+      company: company,
+      quotationCreator: quotationCreator,
+    };
+  
     axios
-      .post(`${process.env.REACT_APP_API}/create-pdf`, {
+      .post(`${process.env.REACT_APP_API}/create-pdf`, invoiceData)
+      .then(() => axios.get(`${process.env.REACT_APP_API}/fetch-pdf`, { responseType: "blob" }))
+      .then((res) => {
+        const pdfBlob = new Blob([res.data], { type: "application/pdf" })
+        saveAs(pdfBlob, "ATC_Quotation.pdf")
+      })
+      .then(() => setDownloadStatus("success"))
+      .catch((error) => {
+        console.error("PDF creation error:", error)
+        setDownloadStatus("error")
+      })
+  }
+
+  // New function to send PDF via WhatsApp
+  const sendPdfViaWhatsApp = async () => {
+    const customerPhone = formatPhoneForWhatsApp(invoice.client?.phone)
+  
+    if (!customerPhone) {
+      enqueueSnackbar("Invalid customer phone number for WhatsApp", { variant: "error" })
+      return
+    }
+  
+    setWhatsappStatus("loading")
+  
+    try {
+      // Step 1: Prepare invoice data - SAME AS EMAIL
+      const invoiceData = {
         name: invoice.client?.name || "",
         address: invoice.client?.address || "",
         phone: invoice.client?.phone || "",
         email: invoice.client?.email || "",
         dueDate: invoice.dueDate,
         date: invoice.createdAt,
-        id: invoice._id,
+        id: invoice.invoiceNumber || invoice._id, // Use invoiceNumber like email does
         notes: invoice.notes,
         subTotal: toCommas(invoice.subTotal),
         total: toCommas(invoice.total),
@@ -147,19 +229,87 @@ const InvoiceDetails = () => {
         totalAmountReceived: toCommas(totalAmountReceived),
         balanceDue: toCommas(total - totalAmountReceived),
         company: company,
-        quotationCreator: quotationCreator, // Use the state value
-      })
-      .then(() => axios.get(`${process.env.REACT_APP_API}/fetch-pdf`, { responseType: "blob" }))
-      .then((res) => {
-        const pdfBlob = new Blob([res.data], { type: "application/pdf" })
-        saveAs(pdfBlob, "Quotation.pdf")
-      })
-      .then(() => setDownloadStatus("success"))
-      .catch((error) => {
-        console.error("PDF creation error:", error)
-        setDownloadStatus("error")
-      })
+        quotationCreator: quotationCreator,
+      };
+  
+      console.log('📄 Creating PDF with data:', invoiceData); // Debug log
+  
+      // Step 2: Create PDF and get public URL from backend
+      const pdfResponse = await axios.post(`${process.env.REACT_APP_API}/create-pdf`, invoiceData);
+  
+      console.log('📄 PDF Response:', pdfResponse.data); // Debug log
+  
+      if (!pdfResponse.data?.success || !pdfResponse.data?.pdfUrl) {
+        throw new Error("Backend did not return PDF URL: " + JSON.stringify(pdfResponse.data))
+      }
+  
+      const pdfUrl = pdfResponse.data.pdfUrl;
+      console.log('🔗 PDF URL for WhatsApp:', pdfUrl); // Debug log
+  
+      // Step 3: Prepare message - More professional
+      const message = `Hello ${invoice.client?.name || 'Customer'},
+  
+  Thank you for your inquiry. Please find attached your quotation from ATC (Arihant Trade Centre).
+  
+  📋 Quotation Details:
+  • Invoice ID: ${invoice.invoiceNumber || invoice._id}
+  • Total Amount: ₹${toCommas(total)}
+  • Date: ${moment(invoice.createdAt).format("DD-MM-YYYY")}
+  ${totalAmountReceived > 0 ? `• Amount Received: ₹${toCommas(totalAmountReceived)}
+  • Balance Due: ₹${toCommas(total - totalAmountReceived)}` : ''}
+  
+  ${quotationCreator?.name ? `Quotation prepared by: ${quotationCreator.name}${quotationCreator?.phone ? ` (${quotationCreator.phone})` : ''}` : ''}
+  
+  For any queries, please feel free to contact us.
+  
+  Best regards,
+  ATC Team`;
+  
+      console.log('💬 WhatsApp Message:', message); // Debug log
+  
+      // Step 4: Send message with PDF via your backend API
+      const whatsappPayload = {
+        phone: customerPhone,
+        message: message,
+        pdfUrl: pdfUrl,
+        filename: 'ATC_Quotation.pdf'
+      };
+  
+      console.log('📱 Sending WhatsApp payload:', whatsappPayload); // Debug log
+  
+      const whatsappResponse = await axios.post(
+        `${process.env.REACT_APP_API}/api/send-whatsapp`,
+        whatsappPayload
+      );
+  
+      console.log('📱 WhatsApp API Response:', whatsappResponse.data); // Debug log
+  
+      if (whatsappResponse.data?.success) {
+        setWhatsappStatus("success")
+        enqueueSnackbar(`Quotation sent successfully via WhatsApp to ${customerPhone}!`, { variant: "success" })
+      } else {
+        throw new Error(`WhatsApp API Error: ${whatsappResponse.data?.error || 'Unknown error'}`)
+      }
+  
+    } catch (error) {
+      console.error("❌ WhatsApp send error:", error)
+      setWhatsappStatus("error")
+      
+      // More detailed error message
+      let errorMessage = "Failed to send quotation via WhatsApp. ";
+      if (error.response?.data?.error) {
+        errorMessage += error.response.data.error;
+      } else if (error.response?.data?.details) {
+        errorMessage += error.response.data.details;
+      } else {
+        errorMessage += error.message;
+      }
+      
+      enqueueSnackbar(errorMessage, { variant: "error" })
+    }
   }
+  
+  
 
   const sendPdf = (e) => {
     e.preventDefault()
@@ -245,17 +395,35 @@ const InvoiceDetails = () => {
           {/* Action Buttons */}
           {invoice?.creator?.includes(user?.result?._id || user?.result?.googleId) && (
             <div className="p-6 border-b border-gray-200">
-              <div className="flex space-x-4">
+              <div className="flex flex-wrap gap-4">
                 <button
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   onClick={sendPdf}
                   disabled={sendStatus === "loading"}
                 >
-                  {sendStatus === "loading" ? "Sending..." : "Send to Customer"}
+                  {sendStatus === "loading" ? "Sending..." : "Send to Email"}
+                </button>
+
+                {/* New WhatsApp Send Button */}
+                <button
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+                  onClick={sendPdfViaWhatsApp}
+                  disabled={whatsappStatus === "loading" || !invoice.client?.phone}
+                >
+                  {whatsappStatus === "loading" ? (
+                    "Sending..."
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                      </svg>
+                      Send via WhatsApp
+                    </>
+                  )}
                 </button>
 
                 <button
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                   onClick={createAndDownloadPdf}
                   disabled={downloadStatus === "loading"}
                 >
@@ -277,21 +445,27 @@ const InvoiceDetails = () => {
                   Edit Quotation
                 </button>
 
-                <button
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-                  onClick={() => setOpen((prev) => !prev)}
-                >
-                  <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
-                    />
-                  </svg>
-                  Follow up
-                </button>
+             
               </div>
+
+              {/* Status Messages */}
+              {whatsappStatus === "success" && (
+                <div className="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+                  ✅ Quotation sent successfully via WhatsApp to {invoice.client?.phone}
+                </div>
+              )}
+              
+              {whatsappStatus === "error" && (
+                <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+                  ❌ Failed to send quotation via WhatsApp. Please check the phone number and try again.
+                </div>
+              )}
+              
+              {!invoice.client?.phone && (
+                <div className="mt-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+                  ⚠️ Customer phone number is required for WhatsApp sending
+                </div>
+              )}
             </div>
           )}
 
@@ -487,17 +661,17 @@ const InvoiceDetails = () => {
                 <div className="space-y-2 text-right">
                   <div className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="text-sm font-medium text-gray-900">Subtotal:</span>
-                    <span className="text-sm font-medium text-gray-900">₹{toCommas(subTotal)}</span>
+                    <span className="text-sm font-medium text-gray-900">{toCommas(subTotal)}</span>
                   </div>
 
                   <div className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="text-sm font-medium text-gray-900">Tax @ {rates}%:</span>
-                    <span className="text-sm font-medium text-gray-900">₹{toCommas(vat)}</span>
+                    <span className="text-sm font-medium text-gray-900">{toCommas(vat)}</span>
                   </div>
 
                   <div className="flex justify-between items-center py-3 border-t-2 border-gray-400">
                     <span className="text-lg font-bold text-gray-900">Final Amount:</span>
-                    <span className="text-lg font-bold text-gray-900">₹{toCommas(total)}</span>
+                    <span className="text-lg font-bold text-gray-900">{toCommas(total)}</span>
                   </div>
 
                   {totalAmountReceived > 0 && (

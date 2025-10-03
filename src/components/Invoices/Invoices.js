@@ -110,6 +110,40 @@ const useStyles2 = makeStyles(theme => ({
 const tableStyle = { width: 160, fontSize: 14, cursor: 'pointer', borderBottom: 'none',  padding: '8px', textAlign: 'center' }
 const headerStyle = { borderBottom: 'none', textAlign: 'center'}
 
+// API Service for follow-ups
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+const followUpAPI = {
+  getHeaders: () => {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  },
+
+  getInvoiceFollowUps: async (invoiceId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/followups/invoice/${invoiceId}`, {
+        method: 'GET',
+        headers: followUpAPI.getHeaders()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching follow-ups:', error);
+      return { success: false, followUps: [] };
+    }
+  }
+};
+
 const Invoices = () => {
     
   const dispatch = useDispatch()
@@ -124,23 +158,46 @@ const Invoices = () => {
   const [followUpDialog, setFollowUpDialog] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [followUpCounts, setFollowUpCounts] = useState({});
+  const [lastFollowUpDates, setLastFollowUpDates] = useState({});
 
   useEffect(() => {
     dispatch(getInvoicesByUser({ search: user?.result?._id || user?.result?.googleId}));
   },[location])
 
   useEffect(() => {
-    // Calculate follow-up counts for each invoice
-    const counts = {};
-    rows.forEach(invoice => {
-      const savedFollowUps = localStorage.getItem(`followups_${invoice._id}`);
-      if (savedFollowUps) {
-        const followUps = JSON.parse(savedFollowUps);
-        const pendingCount = followUps.filter(fu => fu.status === 'pending').length;
-        counts[invoice._id] = pendingCount;
+    // Load follow-up data for all invoices
+    const loadFollowUpData = async () => {
+      if (rows && rows.length > 0) {
+        const counts = {};
+        const lastDates = {};
+        
+        for (const invoice of rows) {
+          try {
+            const response = await followUpAPI.getInvoiceFollowUps(invoice._id);
+            
+            if (response.success && response.followUps) {
+              const followUps = response.followUps;
+              const pendingCount = followUps.filter(fu => fu.status === 'scheduled').length;
+              counts[invoice._id] = pendingCount;
+              
+              // Get the most recent follow-up creation date
+              if (followUps.length > 0) {
+                const sortedFollowUps = followUps.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const latestFollowUp = sortedFollowUps[0];
+                lastDates[invoice._id] = latestFollowUp.createdAt;
+              }
+            }
+          } catch (error) {
+            console.error(`Error loading follow-ups for invoice ${invoice._id}:`, error);
+          }
+        }
+        
+        setFollowUpCounts(counts);
+        setLastFollowUpDates(lastDates);
       }
-    });
-    setFollowUpCounts(counts);
+    };
+
+    loadFollowUpData();
   }, [rows]);
 
   const toCommas = (value) => {
@@ -149,9 +206,15 @@ const Invoices = () => {
 
   const classes = useStyles2();
   const [page, setPage] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(rows.length);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
 
-  const emptyRows = rowsPerPage - Math.min(rowsPerPage, rows.length - page * rowsPerPage);
+  // Sort invoices by creation date (most recent first)
+  const sortedRows = React.useMemo(() => {
+    if (!rows || rows.length === 0) return [];
+    return [...rows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [rows]);
+
+  const emptyRows = rowsPerPage - Math.min(rowsPerPage, sortedRows.length - page * rowsPerPage);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -175,31 +238,51 @@ const Invoices = () => {
     setFollowUpDialog(true);
   }
 
-  const handleFollowUpClose = () => {
+  const handleFollowUpClose = async () => {
     setFollowUpDialog(false);
     setSelectedInvoice(null);
-    // Refresh follow-up counts
-    const counts = {};
-    rows.forEach(invoice => {
-      const savedFollowUps = localStorage.getItem(`followups_${invoice._id}`);
-      if (savedFollowUps) {
-        const followUps = JSON.parse(savedFollowUps);
-        const pendingCount = followUps.filter(fu => fu.status === 'pending').length;
-        counts[invoice._id] = pendingCount;
+    
+    // Refresh follow-up data
+    if (rows && rows.length > 0) {
+      const counts = {};
+      const lastDates = {};
+      
+      for (const invoice of rows) {
+        try {
+          const response = await followUpAPI.getInvoiceFollowUps(invoice._id);
+          
+          if (response.success && response.followUps) {
+            const followUps = response.followUps;
+            const pendingCount = followUps.filter(fu => fu.status === 'scheduled').length;
+            counts[invoice._id] = pendingCount;
+            
+            if (followUps.length > 0) {
+              const sortedFollowUps = followUps.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+              const latestFollowUp = sortedFollowUps[0];
+              lastDates[invoice._id] = latestFollowUp.createdAt;
+            }
+          }
+        } catch (error) {
+          console.error(`Error loading follow-ups for invoice ${invoice._id}:`, error);
+        }
       }
-    });
-    setFollowUpCounts(counts);
+      
+      setFollowUpCounts(counts);
+      setLastFollowUpDates(lastDates);
+    }
+  }
+
+  // Updated function to get the last follow-up date or original due date
+  const getDisplayDate = (invoice) => {
+    const lastFollowUpDate = lastFollowUpDates[invoice._id];
+    if (lastFollowUpDate) {
+      return moment(lastFollowUpDate).fromNow();
+    }
+    return moment(invoice.dueDate).fromNow();
   }
 
   if(!user) {
     history.push('/login')
-  }
-
-  function checkStatus(status) {
-    return status === "Partial" ? {border: 'solid 0px #1976d2', backgroundColor: '#baddff', padding: '8px 18px', borderRadius: '20px' }
-        : status === "Paid" ? {border: 'solid 0px green', backgroundColor: '#a5ffcd', padding: '8px 18px', borderRadius: '20px' }
-        : status === "Unpaid" ? {border: 'solid 0px red', backgroundColor: '#ffaa91', padding: '8px 18px', borderRadius: '20px' }
-        : "red";
   }
 
   if(isLoading) {
@@ -208,7 +291,7 @@ const Invoices = () => {
     </div>
   }
 
-  if(rows.length === 0) {
+  if(!rows || rows.length === 0) {
     return  <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', paddingTop: '20px', margin: '80px'}}>
       <NoData />
       <p style={{padding: '40px', color: 'gray', textAlign: 'center'}}>No invoice yet. Click the plus icon to create invoice</p>
@@ -226,8 +309,7 @@ const Invoices = () => {
                 <TableCell style={headerStyle}>Number</TableCell>
                 <TableCell style={headerStyle}>Client</TableCell>
                 <TableCell style={headerStyle}>Amount</TableCell>
-                <TableCell style={headerStyle}>Due Date</TableCell>
-                <TableCell style={headerStyle}>Status</TableCell>
+                <TableCell style={headerStyle}>Last Follow-up</TableCell>
                 <TableCell style={headerStyle}>Follow Up</TableCell>
                 <TableCell style={headerStyle}>Edit</TableCell>
                 <TableCell style={headerStyle}>Delete</TableCell>
@@ -236,8 +318,8 @@ const Invoices = () => {
 
             <TableBody>
               {(rowsPerPage > 0
-                ? rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                : rows
+                ? sortedRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                : sortedRows
               ).map((row) => (
                 <TableRow key={row._id} style={{cursor: 'pointer'}} >
                   <TableCell style={tableStyle} onClick={() => openInvoice(row._id)}> 
@@ -250,10 +332,7 @@ const Invoices = () => {
                     {row.currency} {row.total ? toCommas(row.total) : row.total} 
                   </TableCell>
                   <TableCell style={tableStyle} onClick={() => openInvoice(row._id)}>
-                    {moment(row.dueDate).fromNow()} 
-                  </TableCell>
-                  <TableCell style={tableStyle} onClick={() => openInvoice(row._id)}>
-                    <button style={checkStatus(row.status)}>{row.status}</button>
+                    {getDisplayDate(row)} 
                   </TableCell>
                   <TableCell style={{...tableStyle, width: '10px'}}>
                     <IconButton onClick={() => openFollowUp(row)}>
@@ -281,7 +360,7 @@ const Invoices = () => {
 
               {emptyRows > 0 && (
                 <TableRow style={{ height: 53 * emptyRows }}>
-                  <TableCell colSpan={8} />
+                  <TableCell colSpan={7} />
                 </TableRow>
               )}
             </TableBody>
@@ -290,8 +369,8 @@ const Invoices = () => {
               <TableRow>
                 <TablePagination
                   rowsPerPageOptions={[5, 10, 25, { label: 'All', value: -1 }]}
-                  colSpan={8}
-                  count={rows.length}
+                  colSpan={7}
+                  count={sortedRows.length}
                   rowsPerPage={rowsPerPage}
                   page={page}
                   SelectProps={{
@@ -314,6 +393,7 @@ const Invoices = () => {
           open={followUpDialog}
           onClose={handleFollowUpClose}
           invoice={selectedInvoice}
+          onUpdateFollowUp={handleFollowUpClose}
         />
       )}
     </div>

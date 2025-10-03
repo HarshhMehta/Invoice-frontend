@@ -60,7 +60,7 @@ const useStyles = makeStyles(theme => ({
 }));
 
 // Updated API Service - Simplified without auth requirements
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://invoice-56iv.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const followUpAPI = {
   getHeaders: () => {
@@ -479,17 +479,19 @@ const FollowUp = ({ open, onClose, invoice, onUpdateFollowUp }) => {
                           {moment(followUp.followUpDate).format('DD/MM/YYYY')} at {followUp.followUpTime}
                         </Typography>
                         <Chip
-                          label={followUp.status.toUpperCase()}
-                          color={getStatusColor(followUp.status)}
-                          size="small"
-                          className={classes.statusChip}
-                        />
-                        <Chip
-                          label={followUp.priority.toUpperCase()}
-                          variant="outlined"
-                          size="small"
-                          className={classes.statusChip}
-                        />
+  label={(followUp.status ? followUp.status.toUpperCase() : "SCHEDULED")}
+  color={getStatusColor(followUp.status || "scheduled")}
+  size="small"
+  className={classes.statusChip}
+/>
+
+<Chip
+  label={(followUp.priority ? followUp.priority.toUpperCase() : "MEDIUM")}
+  variant="outlined"
+  size="small"
+  className={classes.statusChip}
+/>
+
                       </Box>
                     }
                     secondary={

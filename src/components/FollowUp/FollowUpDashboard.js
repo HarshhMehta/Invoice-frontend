@@ -1,76 +1,111 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
+  Paper,
   Typography,
-  Card,
-  CardContent,
-  Grid,
-  Chip,
-  IconButton,
   Box,
-  Alert,
+  Chip,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
   Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert,
+  CircularProgress,
+  Card,
+  CardContent,
+  Grid,
+  Badge,
+  Divider,
+  Avatar,
+  Tabs,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
-  TableRow,
-  Paper,
-  CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Tabs,
-  Tab
+  TableRow
 } from '@mui/material';
 import {
   Phone as PhoneIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
+  WhatsApp as WhatsAppIcon,
+  Add as AddIcon,
   Schedule as ScheduleIcon,
   Person as PersonIcon,
-  Notifications as NotificationsIcon,
-  WhatsApp as WhatsAppIcon,
   AccessTime as AccessTimeIcon,
-  Refresh as RefreshIcon,
-  Notes as NotesIcon
+  TrendingUp as TrendingUpIcon,
+  Check as CheckIcon,
+  Close as CloseIcon,
+  History as HistoryIcon,
+  Call as CallIcon,
+  Assignment as AssignmentIcon,
+  Today as TodayIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { makeStyles } from '@mui/styles';
 import moment from 'moment';
 
 const useStyles = makeStyles(theme => ({
-  container: {
-    paddingTop: 20,
-    paddingBottom: 50
+  dashboard: {
+    paddingTop: '70px',
+    paddingBottom: '50px',
+    paddingLeft: "120px;",
   },
   statsCard: {
     textAlign: 'center',
-    padding: 20
+    padding: '20px',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: 'white'
   },
-  tableContainer: {
-    marginTop: 20
+  followUpCard: {
+    marginBottom: '12px',
+    borderRadius: '8px',
+    '&:hover': {
+      boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+      transform: 'translateY(-2px)',
+      transition: 'all 0.3s ease'
+    }
   },
-  overdueRow: {
-    backgroundColor: '#ffebee'
+  overdueCard: {
+    borderLeft: '4px solid #f44336'
   },
-  todayRow: {
-    backgroundColor: '#e3f2fd'
+  todayCard: {
+    borderLeft: '4px solid #ff9800'
   },
-  actionButtons: {
-    display: 'flex',
-    gap: 4
+  upcomingCard: {
+    borderLeft: '4px solid #4caf50'
+  },
+  completedCard: {
+    borderLeft: '4px solid #9e9e9e'
+  },
+  priorityHigh: {
+    backgroundColor: '#ffebee',
+    borderLeft: '4px solid #f44336'
+  },
+  priorityMedium: {
+    backgroundColor: '#fff3e0',
+    borderLeft: '4px solid #ff9800'
+  },
+  priorityLow: {
+    backgroundColor: '#e8f5e8',
+    borderLeft: '4px solid #4caf50'
   }
 }));
 
-// Updated API Service to match your routes
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://invoice-56iv.onrender.com';
+// API Service
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const followUpAPI = {
   getHeaders: () => {
@@ -93,13 +128,8 @@ const followUpAPI = {
     return await response.json();
   },
 
-  // Get all follow-ups (public route)
-  getAllFollowUps: async (filters = {}) => {
-    const params = new URLSearchParams();
-    if (filters.status && filters.status !== 'all') params.append('status', filters.status);
-    if (filters.priority && filters.priority !== 'all') params.append('priority', filters.priority);
-
-    const response = await fetch(`${API_BASE_URL}/api/followups?${params.toString()}`, {
+  getAllFollowUps: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/followups`, {
       method: 'GET',
       headers: followUpAPI.getHeaders()
     });
@@ -107,37 +137,6 @@ const followUpAPI = {
     return await followUpAPI.handleResponse(response);
   },
 
-  // Get due follow-ups (protected route)
-  getDueFollowUps: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/followups/user/due`, {
-      method: 'GET',
-      headers: followUpAPI.getHeaders()
-    });
-    
-    return await followUpAPI.handleResponse(response);
-  },
-
-  // Get today's follow-ups (protected route)
-  getTodayFollowUps: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/followups/user/today`, {
-      method: 'GET',
-      headers: followUpAPI.getHeaders()
-    });
-    
-    return await followUpAPI.handleResponse(response);
-  },
-
-  // Get stats (protected route)
-  getStats: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/followups/user/stats`, {
-      method: 'GET',
-      headers: followUpAPI.getHeaders()
-    });
-    
-    return await followUpAPI.handleResponse(response);
-  },
-
-  // Update follow-up status (public route)
   updateFollowUpStatus: async (followUpId, status) => {
     const response = await fetch(`${API_BASE_URL}/api/followups/${followUpId}`, {
       method: 'PATCH',
@@ -148,12 +147,32 @@ const followUpAPI = {
     return await followUpAPI.handleResponse(response);
   },
 
-  // Add call notes (public route)
-  addCallNotes: async (followUpId, notes) => {
-    const response = await fetch(`${API_BASE_URL}/api/followups/${followUpId}/call-notes`, {
+  addCallRecord: async (followUpId, callData) => {
+    const response = await fetch(`${API_BASE_URL}/api/followups/${followUpId}/call-record`, {
       method: 'POST',
       headers: followUpAPI.getHeaders(),
-      body: JSON.stringify({ notes })
+      body: JSON.stringify(callData)
+    });
+    
+    return await followUpAPI.handleResponse(response);
+  },
+
+  scheduleNextFollowUp: async (followUpData) => {
+    const response = await fetch(`${API_BASE_URL}/api/followups`, {
+      method: 'POST',
+      headers: followUpAPI.getHeaders(),
+      body: JSON.stringify(followUpData)
+    });
+    
+    return await followUpAPI.handleResponse(response);
+  },
+
+  // Updated method to properly update follow-up details
+  updateFollowUp: async (followUpId, updateData) => {
+    const response = await fetch(`${API_BASE_URL}/api/followups/${followUpId}`, {
+      method: 'PUT',
+      headers: followUpAPI.getHeaders(),
+      body: JSON.stringify(updateData)
     });
     
     return await followUpAPI.handleResponse(response);
@@ -162,181 +181,242 @@ const followUpAPI = {
 
 const FollowUpDashboard = () => {
   const classes = useStyles();
-  const [allFollowUps, setAllFollowUps] = useState([]);
-  const [todayFollowUps, setTodayFollowUps] = useState([]);
-  const [dueFollowUps, setDueFollowUps] = useState([]);
-  const [stats, setStats] = useState({ 
-    totalScheduled: 0, 
-    todayCount: 0, 
-    overdueCount: 0, 
-    completedCount: 0 
-  });
-  const [selectedFollowUp, setSelectedFollowUp] = useState(null);
-  const [callNotesDialog, setCallNotesDialog] = useState(false);
-  const [notesViewDialog, setNotesViewDialog] = useState(false);
-  const [viewNotesData, setViewNotesData] = useState(null);
-  const [callNotes, setCallNotes] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [followUps, setFollowUps] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [filters, setFilters] = useState({ status: 'all', priority: 'all' });
   const [tabValue, setTabValue] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
+  
+  // Dialog states
+  const [callRecordDialog, setCallRecordDialog] = useState(false);
+  const [nextFollowUpDialog, setNextFollowUpDialog] = useState(false);
+  const [selectedFollowUp, setSelectedFollowUp] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Call record form
+  const [callRecord, setCallRecord] = useState({
+    callResult: '',
+    notes: '',
+    callDuration: '',
+    nextAction: ''
+  });
+  
+  // Next follow-up form
+  const [nextFollowUp, setNextFollowUp] = useState({
+    followUpDate: '',
+    followUpTime: '',
+    notes: '',
+    priority: 'medium',
+    reason: ''
+  });
 
   useEffect(() => {
-    loadAllData();
-    
-    // Set up interval to refresh data every 2 minutes
-    const interval = setInterval(() => {
-      loadAllData();
-    }, 120000);
-
-    return () => clearInterval(interval);
+    loadFollowUps();
   }, []);
 
-  useEffect(() => {
-    loadFilteredFollowUps();
-  }, [filters]);
-
-  const loadAllData = async () => {
+  const loadFollowUps = async () => {
     setLoading(true);
     setError('');
     
     try {
-      await Promise.all([
-        loadFilteredFollowUps(),
-        loadTodayFollowUps(),
-        loadDueFollowUps(),
-        loadStats()
-      ]);
+      const response = await followUpAPI.getAllFollowUps();
+      
+      if (response.success) {
+        // Remove duplicates based on _id and ensure proper sorting
+        const uniqueFollowUps = response.followUps.filter((followUp, index, self) => 
+          index === self.findIndex(fu => fu._id === followUp._id)
+        );
+        
+        const sortedFollowUps = uniqueFollowUps.sort((a, b) => {
+          return new Date(a.followUpDate) - new Date(b.followUpDate);
+        });
+        
+        setFollowUps(sortedFollowUps);
+        console.log('Follow-ups loaded:', sortedFollowUps); // Debug log
+      } else {
+        setError('Failed to load follow-ups');
+      }
     } catch (err) {
-      console.error('Error loading data:', err);
-      setError('Error loading follow-up data');
+      console.error('Error loading follow-ups:', err);
+      setError(err.message || 'Error loading follow-ups');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadFilteredFollowUps = async () => {
-    try {
-      const response = await followUpAPI.getAllFollowUps(filters);
-      
-      if (response.success) {
-        setAllFollowUps(response.followUps || response.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading follow-ups:', err);
-      if (!loading) {
-        setError('Error loading follow-ups: ' + err.message);
-      }
-    }
-  };
-
-  const loadTodayFollowUps = async () => {
-    try {
-      const response = await followUpAPI.getTodayFollowUps();
-      
-      if (response.success) {
-        setTodayFollowUps(response.followUps || response.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading today follow-ups:', err);
-      // Fallback to calculating from all data
-      setTodayFollowUps(allFollowUps.filter(fu => isDueToday(fu) && fu.status === 'scheduled'));
-    }
-  };
-
-  const loadDueFollowUps = async () => {
-    try {
-      const response = await followUpAPI.getDueFollowUps();
-      
-      if (response.success) {
-        setDueFollowUps(response.followUps || response.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading due follow-ups:', err);
-      // Fallback to calculating from all data
-      setDueFollowUps(allFollowUps.filter(fu => isOverdue(fu)));
-    }
-  };
-
-  const loadStats = async () => {
-    try {
-      const response = await followUpAPI.getStats();
-      
-      if (response.success) {
-        setStats(response.stats || response.data || stats);
-      }
-    } catch (err) {
-      console.error('Error loading stats:', err);
-      // Calculate stats from existing data
-      const totalScheduled = allFollowUps.filter(fu => fu.status === 'scheduled').length;
-      const todayCount = allFollowUps.filter(fu => isDueToday(fu) && fu.status === 'scheduled').length;
-      const overdueCount = allFollowUps.filter(fu => isOverdue(fu)).length;
-      const completedCount = allFollowUps.filter(fu => fu.status === 'completed').length;
-      
-      setStats({ totalScheduled, todayCount, overdueCount, completedCount });
-    }
-  };
-
-  const refreshData = async () => {
-    setRefreshing(true);
-    try {
-      await loadAllData();
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const updateFollowUpStatus = async (followUpId, status) => {
-    setSubmitting(true);
+  // Fixed categorization logic
+  const categorizeFollowUps = () => {
+    const now = moment();
+    const today = moment().startOf('day');
     
+    // Filter only scheduled follow-ups and categorize properly
+    const scheduledFollowUps = followUps.filter(fu => fu.status === 'scheduled');
+    
+    const overdue = scheduledFollowUps.filter(fu => {
+      const followUpMoment = moment(fu.followUpDate);
+      return followUpMoment.isBefore(today);
+    }).sort((a, b) => moment(a.followUpDate) - moment(b.followUpDate));
+    
+    const todayFollowUps = scheduledFollowUps.filter(fu => {
+      const followUpMoment = moment(fu.followUpDate);
+      return followUpMoment.isSame(today, 'day');
+    }).sort((a, b) => moment(`${a.followUpDate} ${a.followUpTime}`) - moment(`${b.followUpDate} ${b.followUpTime}`));
+    
+    const upcoming = scheduledFollowUps.filter(fu => {
+      const followUpMoment = moment(fu.followUpDate);
+      return followUpMoment.isAfter(today);
+    }).sort((a, b) => moment(a.followUpDate) - moment(b.followUpDate));
+    
+    const completed = followUps.filter(fu => 
+      fu.status === 'completed'
+    ).sort((a, b) => moment(b.updatedAt) - moment(a.updatedAt));
+
+    console.log('Categorized:', { overdue: overdue.length, today: todayFollowUps.length, upcoming: upcoming.length, completed: completed.length }); // Debug log
+
+    return { overdue, todayFollowUps, upcoming, completed };
+  };
+
+  const getStats = () => {
+    const { overdue, todayFollowUps, upcoming, completed } = categorizeFollowUps();
+    const total = followUps.length;
+    const scheduled = overdue.length + todayFollowUps.length + upcoming.length;
+    
+    return {
+      total,
+      scheduled,
+      overdue: overdue.length,
+      today: todayFollowUps.length,
+      upcoming: upcoming.length,
+      completed: completed.length
+    };
+  };
+
+  const openCallRecord = (followUp) => {
+    setSelectedFollowUp(followUp);
+    setCallRecord({
+      callResult: '',
+      notes: '',
+      callDuration: '',
+      nextAction: ''
+    });
+    setCallRecordDialog(true);
+  };
+
+  const openNextFollowUp = (followUp) => {
+    setSelectedFollowUp(followUp);
+    // Pre-fill current values for editing
+    setNextFollowUp({
+      followUpDate: moment(followUp.followUpDate).format('YYYY-MM-DD'),
+      followUpTime: followUp.followUpTime || '',
+      notes: followUp.notes || '',
+      priority: followUp.priority || 'medium',
+      reason: followUp.reason || ''
+    });
+    setNextFollowUpDialog(true);
+  };
+
+  // Fixed method to handle reschedule properly with better date comparison
+  const handleNextFollowUpSubmit = async () => {
+    if (!nextFollowUp.followUpDate || !nextFollowUp.followUpTime || !nextFollowUp.notes || !nextFollowUp.reason) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
     try {
-      const response = await followUpAPI.updateFollowUpStatus(followUpId, status);
+      // Create proper date for comparison
+      const newFollowUpDate = nextFollowUp.followUpDate; // Keep as YYYY-MM-DD format
+      const todayDate = moment().format('YYYY-MM-DD');
+      
+      console.log('New follow-up date:', newFollowUpDate);
+      console.log('Today date:', todayDate);
+      
+      // Update the existing follow-up with new date/time and details
+      const updateData = {
+        followUpDate: newFollowUpDate,
+        followUpTime: nextFollowUp.followUpTime,
+        reason: nextFollowUp.reason,
+        notes: nextFollowUp.notes,
+        priority: nextFollowUp.priority,
+        status: 'scheduled',
+        updatedAt: new Date().toISOString()
+      };
+
+      console.log('Updating follow-up:', selectedFollowUp._id, updateData);
+
+      const response = await followUpAPI.updateFollowUp(selectedFollowUp._id, updateData);
 
       if (response.success) {
-        await loadAllData();
+        // Close dialog first
+        setNextFollowUpDialog(false);
+        setSelectedFollowUp(null);
+        
+        // Clear form
+        setNextFollowUp({
+          followUpDate: '',
+          followUpTime: '',
+          notes: '',
+          priority: 'medium',
+          reason: ''
+        });
+        
+        // Force reload data from server
+        await loadFollowUps();
+        
+        // Auto-navigate to appropriate tab based on new date with proper comparison
+        setTimeout(() => {
+          const newDateMoment = moment(newFollowUpDate).startOf('day');
+          const todayMoment = moment().startOf('day');
+          
+          console.log('Date comparison for tab navigation:');
+          console.log('New date moment:', newDateMoment.format('YYYY-MM-DD'));
+          console.log('Today moment:', todayMoment.format('YYYY-MM-DD'));
+          console.log('Is before today:', newDateMoment.isBefore(todayMoment));
+          console.log('Is same as today:', newDateMoment.isSame(todayMoment, 'day'));
+          console.log('Is after today:', newDateMoment.isAfter(todayMoment, 'day'));
+          
+          if (newDateMoment.isBefore(todayMoment)) {
+            console.log('Switching to Overdue tab');
+            setTabValue(0); // Overdue
+          } else if (newDateMoment.isSame(todayMoment, 'day')) {
+            console.log('Switching to Today tab');
+            setTabValue(1); // Today
+          } else {
+            console.log('Switching to Upcoming tab');
+            setTabValue(2); // Upcoming
+          }
+        }, 200);
+        
       } else {
-        setError('Failed to update follow-up status');
+        setError('Failed to update follow-up');
       }
     } catch (err) {
       console.error('Error updating follow-up:', err);
-      setError('Error updating follow-up: ' + err.message);
+      setError(err.message || 'Error updating follow-up');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const addCallNotes = async () => {
-    if (!selectedFollowUp || !callNotes.trim()) return;
-
-    setSubmitting(true);
-    
+  const markAsCompleted = async (followUpId) => {
     try {
-      const response = await followUpAPI.addCallNotes(selectedFollowUp._id, callNotes);
-
+      setLoading(true);
+      const response = await followUpAPI.updateFollowUpStatus(followUpId, 'completed');
+      
       if (response.success) {
-        setCallNotesDialog(false);
-        setSelectedFollowUp(null);
-        setCallNotes('');
-        await loadAllData();
+        // Immediately reload data
+        await loadFollowUps();
+        // Auto-navigate to completed tab
+        setTabValue(3);
       } else {
-        setError('Failed to save call notes');
+        setError('Failed to mark as completed');
       }
     } catch (err) {
-      console.error('Error saving call notes:', err);
-      setError('Error saving call notes: ' + err.message);
+      setError(err.message || 'Error updating status');
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
-  };
-
-  const markAsCompleted = (followUpId) => {
-    updateFollowUpStatus(followUpId, 'completed');
-  };
-
-  const closeFollowUp = (followUpId) => {
-    updateFollowUpStatus(followUpId, 'closed');
   };
 
   const openWhatsApp = (phoneNumber) => {
@@ -345,445 +425,408 @@ const FollowUpDashboard = () => {
     window.open(whatsappUrl, '_blank');
   };
 
-  const openNotesView = (followUp) => {
-    setViewNotesData(followUp);
-    setNotesViewDialog(true);
-  };
-
-  const openCallNotesDialog = (followUp) => {
-    setSelectedFollowUp(followUp);
-    setCallNotesDialog(true);
-    setCallNotes('');
+  const getPriorityClass = (priority) => {
+    switch(priority) {
+      case 'high': return classes.priorityHigh;
+      case 'medium': return classes.priorityMedium;
+      case 'low': return classes.priorityLow;
+      default: return classes.priorityMedium;
+    }
   };
 
   const getPriorityColor = (priority) => {
-    switch (priority) {
+    switch(priority) {
       case 'high': return 'error';
       case 'medium': return 'warning';
       case 'low': return 'success';
-      default: return 'default';
+      default: return 'info';
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return 'success';
-      case 'closed': return 'default';
-      case 'scheduled': return 'info';
-      default: return 'default';
-    }
-  };
+  const renderFollowUpCard = (followUp, type) => {
+    const typeClass = type === 'overdue' ? classes.overdueCard : 
+                     type === 'today' ? classes.todayCard : 
+                     type === 'upcoming' ? classes.upcomingCard : classes.completedCard;
 
-  const isDueToday = (followUp) => {
-    return moment(followUp.followUpDate).isSame(moment(), 'day');
-  };
-
-  const isOverdue = (followUp) => {
-    const now = moment();
-    const followUpDateTime = moment(`${moment(followUp.followUpDate).format('YYYY-MM-DD')} ${followUp.followUpTime}`);
-    return now.isAfter(followUpDateTime) && followUp.status === 'scheduled';
-  };
-
-  const getTimeStatus = (followUp) => {
-    if (isDueToday(followUp)) return 'Today';
-    if (isOverdue(followUp)) return 'Overdue';
-    return 'Upcoming';
-  };
-
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-  };
-
-  const getTabData = () => {
-    switch (tabValue) {
-      case 0: return allFollowUps;
-      case 1: return allFollowUps.filter(fu => fu.status === 'scheduled');
-      case 2: return dueFollowUps;
-      case 3: return todayFollowUps;
-      default: return allFollowUps;
-    }
-  };
-
-  if (loading) {
     return (
-      <Container className={classes.container}>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight={400}>
-          <CircularProgress size={50} />
-          <Typography variant="h6" style={{ marginLeft: 16 }}>
-            Loading follow-ups...
+      <Card key={followUp._id} className={`${classes.followUpCard} ${typeClass} ${getPriorityClass(followUp.priority)}`}>
+        <CardContent>
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+            <Box>
+              <Typography variant="h6" color="primary">
+                {followUp.customerName}
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                {followUp.phoneNumber}
+              </Typography>
+            </Box>
+            <Box display="flex" gap={1}>
+              <Chip 
+                label={followUp.priority?.toUpperCase() || 'MEDIUM'} 
+                color={getPriorityColor(followUp.priority)}
+                size="small"
+              />
+              {type === 'overdue' && (
+                <Chip 
+                  label="OVERDUE" 
+                  color="error" 
+                  size="small"
+                  icon={<WarningIcon />}
+                />
+              )}
+              {type === 'today' && (
+                <Chip 
+                  label="TODAY" 
+                  color="warning" 
+                  size="small"
+                  icon={<TodayIcon />}
+                />
+              )}
+            </Box>
+          </Box>
+
+          <Typography variant="body2" gutterBottom>
+            <strong>Follow-up:</strong> {moment(followUp.followUpDate).format('DD/MM/YYYY')} at {moment(followUp.followUpTime, "HH:mm").format("hh:mm A")}
           </Typography>
+          
+          <Typography variant="body2" gutterBottom>
+            <strong>Reason:</strong> {followUp.reason}
+          </Typography>
+          
+          <Typography variant="body2" gutterBottom>
+            <strong>Notes:</strong> {followUp.notes}
+          </Typography>
+
+          <Box display="flex" gap={1} mt={2} flexWrap="wrap">
+            <Button
+              size="small"
+              variant="contained"
+              color="success"
+              startIcon={<WhatsAppIcon />}
+              onClick={() => openWhatsApp(followUp.phoneNumber)}
+            >
+              WhatsApp
+            </Button>
+            
+            {followUp.status === 'scheduled' && (
+              <>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ScheduleIcon />}
+                  onClick={() => openNextFollowUp(followUp)}
+                >
+                  Reschedule
+                </Button>
+                
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="primary"
+                  startIcon={<CheckIcon />}
+                  onClick={() => markAsCompleted(followUp._id)}
+                >
+                  Complete
+                </Button>
+              </>
+            )}
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const stats = getStats();
+  const { overdue, todayFollowUps, upcoming, completed } = categorizeFollowUps();
+
+  if (loading && followUps.length === 0) {
+    return (
+      <Container className={classes.dashboard}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress />
         </Box>
       </Container>
     );
   }
 
   return (
-    <Container className={classes.container}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+    <Container 
+      className={classes.dashboard} 
+      style={{ maxWidth: '1200px', paddingLeft: '10px' }}
+    >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h4">
           Follow-up Dashboard
         </Typography>
         <Button
           variant="outlined"
-          onClick={refreshData}
-          startIcon={refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
-          disabled={refreshing}
+          onClick={() => loadFollowUps(true)}
+          disabled={loading}
+          startIcon={loading ? <CircularProgress size={16} /> : <TrendingUpIcon />}
         >
-          {refreshing ? 'Refreshing...' : 'Refresh'}
+          {loading ? 'Refreshing...' : 'Refresh Data'}
         </Button>
       </Box>
 
       {error && (
-        <Alert severity="error" style={{ marginBottom: 20 }} onClose={() => setError('')}>
+        <Alert severity="error" style={{ marginBottom: 16 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
 
       {/* Stats Cards */}
-      <Grid container spacing={3} style={{ marginBottom: 30 }}>
-        <Grid item xs={12} md={3}>
-          <Card className={classes.statsCard}>
-            <CardContent>
-              <NotificationsIcon style={{ fontSize: 40, color: '#f44336' }} />
-              <Typography variant="h4" style={{ color: '#f44336' }}>
-                {stats.overdueCount}
-              </Typography>
-              <Typography variant="subtitle1">Overdue</Typography>
+      <Grid container spacing={3} style={{ marginBottom: 24 }}>
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#1976d2', margin: '0 auto 8px' }}>
+                <AssignmentIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.total}</Typography>
+              <Typography variant="body2" color="textSecondary">Total</Typography>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={3}>
-          <Card className={classes.statsCard}>
-            <CardContent>
-              <AccessTimeIcon style={{ fontSize: 40, color: '#ff9800' }} />
-              <Typography variant="h4" style={{ color: '#ff9800' }}>
-                {stats.todayCount}
-              </Typography>
-              <Typography variant="subtitle1">Due Today</Typography>
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#f44336', margin: '0 auto 8px' }}>
+                <WarningIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.overdue}</Typography>
+              <Typography variant="body2" color="textSecondary">Overdue</Typography>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={3}>
-          <Card className={classes.statsCard}>
-            <CardContent>
-              <ScheduleIcon style={{ fontSize: 40, color: '#2196f3' }} />
-              <Typography variant="h4" style={{ color: '#2196f3' }}>
-                {stats.totalScheduled}
-              </Typography>
-              <Typography variant="subtitle1">Scheduled</Typography>
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#ff9800', margin: '0 auto 8px' }}>
+                <TodayIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.today}</Typography>
+              <Typography variant="body2" color="textSecondary">Today</Typography>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={3}>
-          <Card className={classes.statsCard}>
-            <CardContent>
-              <PersonIcon style={{ fontSize: 40, color: '#4caf50' }} />
-              <Typography variant="h4" style={{ color: '#4caf50' }}>
-                {stats.completedCount}
-              </Typography>
-              <Typography variant="subtitle1">Completed</Typography>
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#4caf50', margin: '0 auto 8px' }}>
+                <ScheduleIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.upcoming}</Typography>
+              <Typography variant="body2" color="textSecondary">Upcoming</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#4caf50', margin: '0 auto 8px' }}>
+                <CheckIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.completed}</Typography>
+              <Typography variant="body2" color="textSecondary">Completed</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={2}>
+          <Card>
+            <CardContent style={{ textAlign: 'center' }}>
+              <Avatar style={{ backgroundColor: '#9e9e9e', margin: '0 auto 8px' }}>
+                <AccessTimeIcon />
+              </Avatar>
+              <Typography variant="h4">{stats.scheduled}</Typography>
+              <Typography variant="body2" color="textSecondary">Scheduled</Typography>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* Filters and Tabs */}
-      <Card style={{ marginBottom: 20 }}>
-        <CardContent>
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Tabs value={tabValue} onChange={handleTabChange}>
-              <Tab label={`All (${allFollowUps.length})`} />
-              <Tab label={`Scheduled (${allFollowUps.filter(fu => fu.status === 'scheduled').length})`} />
-              <Tab label={`Overdue (${dueFollowUps.length})`} />
-              <Tab label={`Today (${todayFollowUps.length})`} />
-            </Tabs>
-            
-            <Box display="flex" gap={2}>
-              <FormControl size="small" style={{ minWidth: 120 }}>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={filters.status}
-                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                >
-                  <MenuItem value="all">All Status</MenuItem>
-                  <MenuItem value="scheduled">Scheduled</MenuItem>
-                  <MenuItem value="completed">Completed</MenuItem>
-                  <MenuItem value="closed">Closed</MenuItem>
-                </Select>
-              </FormControl>
-              
-              <FormControl size="small" style={{ minWidth: 120 }}>
-                <InputLabel>Priority</InputLabel>
-                <Select
-                  value={filters.priority}
-                  onChange={(e) => setFilters(prev => ({ ...prev, priority: e.target.value }))}
-                >
-                  <MenuItem value="all">All Priority</MenuItem>
-                  <MenuItem value="high">High</MenuItem>
-                  <MenuItem value="medium">Medium</MenuItem>
-                  <MenuItem value="low">Low</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-          </Box>
-        </CardContent>
-      </Card>
+      {/* Tabs for different categories */}
+      <Paper style={{ marginBottom: 24 }}>
+        <Tabs
+          value={tabValue}
+          onChange={(e, newValue) => setTabValue(newValue)}
+          indicatorColor="primary"
+          textColor="primary"
+          centered
+        >
+          <Tab 
+            label={
+              <Badge badgeContent={stats.overdue} color="error">
+                Overdue
+              </Badge>
+            } 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={stats.today} color="warning">
+                Today
+              </Badge>
+            } 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={stats.upcoming} color="info">
+                Upcoming
+              </Badge>
+            } 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={stats.completed} color="success">
+                Completed
+              </Badge>
+            } 
+          />
+        </Tabs>
+      </Paper>
 
-      {/* Main Table */}
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Follow-ups ({getTabData().length})
-          </Typography>
-          
-          {getTabData().length === 0 ? (
-            <Alert severity="info">
-              No follow-ups found. Create follow-ups from your invoice list to see them here.
-            </Alert>
-          ) : (
-            <TableContainer component={Paper} className={classes.tableContainer}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell><strong>Date & Time</strong></TableCell>
-                    <TableCell><strong>Customer</strong></TableCell>
-                    <TableCell><strong>Phone</strong></TableCell>
-                    <TableCell><strong>Reason</strong></TableCell>
-                    <TableCell><strong>Status</strong></TableCell>
-                    <TableCell><strong>Priority</strong></TableCell>
-                    <TableCell><strong>Notes</strong></TableCell>
-                    <TableCell><strong>Actions</strong></TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {getTabData().map((followUp) => (
-                    <TableRow 
-                      key={followUp._id}
-                      className={
-                        isOverdue(followUp) ? classes.overdueRow : 
-                        isDueToday(followUp) ? classes.todayRow : ''
-                      }
-                    >
-                      <TableCell>
-                        <Typography variant="body2">
-                          {moment(followUp.followUpDate).format('DD/MM/YY')}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {followUp.followUpTime}
-                        </Typography>
-                        <Typography variant="caption" display="block" color="textSecondary">
-                          {getTimeStatus(followUp)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {followUp.customerName}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {followUp.phoneNumber}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" style={{ maxWidth: 150 }}>
-                          {followUp.reason && followUp.reason.length > 40 
-                            ? followUp.reason.substring(0, 40) + '...'
-                            : followUp.reason || 'No reason'
-                          }
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={followUp.status.toUpperCase()}
-                          color={getStatusColor(followUp.status)}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={followUp.priority ? followUp.priority.toUpperCase() : 'MEDIUM'}
-                          color={getPriorityColor(followUp.priority || 'medium')}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Typography variant="body2" style={{ maxWidth: 100 }}>
-                            {followUp.notes 
-                              ? followUp.notes.length > 20 
-                                ? followUp.notes.substring(0, 20) + '...' 
-                                : followUp.notes
-                              : 'No notes'
-                            }
-                          </Typography>
-                          {(followUp.notes || followUp.callHistory?.length > 0) && (
-                            <IconButton
-                              size="small"
-                              onClick={() => openNotesView(followUp)}
-                              title="View Notes"
-                            >
-                              <NotesIcon fontSize="small" />
-                            </IconButton>
-                          )}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box className={classes.actionButtons}>
-                          <IconButton
-                            size="small"
-                            onClick={() => openWhatsApp(followUp.phoneNumber)}
-                            title="WhatsApp"
-                            color="success"
-                            disabled={submitting}
-                          >
-                            <WhatsAppIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => openCallNotesDialog(followUp)}
-                            title="Call & Add Notes"
-                            color="primary"
-                            disabled={submitting}
-                          >
-                            <PhoneIcon fontSize="small" />
-                          </IconButton>
-                          {followUp.status === 'scheduled' && (
-                            <>
-                              <IconButton
-                                size="small"
-                                onClick={() => markAsCompleted(followUp._id)}
-                                title="Mark as Completed"
-                                color="success"
-                                disabled={submitting}
-                              >
-                                <CheckIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => closeFollowUp(followUp._id)}
-                                title="Close Follow-up"
-                                color="error"
-                                disabled={submitting}
-                              >
-                                <CloseIcon fontSize="small" />
-                              </IconButton>
-                            </>
-                          )}
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Notes View Dialog */}
-      <Dialog open={notesViewDialog} onClose={() => setNotesViewDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          Follow-up Details - {viewNotesData?.customerName}
-        </DialogTitle>
-        <DialogContent>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle2" gutterBottom>Follow-up Information:</Typography>
-              <Box mb={2} p={2} bgcolor="#f5f5f5" borderRadius={1}>
-                <Typography variant="body2"><strong>Date:</strong> {moment(viewNotesData?.followUpDate).format('DD/MM/YYYY')}</Typography>
-                <Typography variant="body2"><strong>Time:</strong> {viewNotesData?.followUpTime}</Typography>
-                <Typography variant="body2"><strong>Phone:</strong> {viewNotesData?.phoneNumber}</Typography>
-                <Typography variant="body2"><strong>Priority:</strong> {(viewNotesData?.priority || 'medium').toUpperCase()}</Typography>
-                <Typography variant="body2"><strong>Status:</strong> {(viewNotesData?.status || 'scheduled').toUpperCase()}</Typography>
-              </Box>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle2" gutterBottom>Additional Information:</Typography>
-              <Box mb={2} p={2} bgcolor="#f5f5f5" borderRadius={1}>
-                <Typography variant="body2"><strong>Invoice:</strong> #{viewNotesData?.invoiceId}</Typography>
-                <Typography variant="caption" color="textSecondary" style={{ marginTop: 8, display: 'block' }}>
-                  Created: {moment(viewNotesData?.createdAt).format('DD/MM/YYYY hh:mm A')}
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
-
-          <Typography variant="subtitle2" gutterBottom>Reason for Follow-up:</Typography>
-          <Box mb={2} p={2} bgcolor="#fff3e0" borderRadius={1}>
-            <Typography variant="body1">{viewNotesData?.reason || 'No reason specified'}</Typography>
-          </Box>
-
-          <Typography variant="subtitle2" gutterBottom>Notes:</Typography>
-          <Box mb={2} p={2} bgcolor="#e8f5e9" borderRadius={1}>
-            <Typography variant="body1">{viewNotesData?.notes || 'No notes'}</Typography>
-          </Box>
-
-          {viewNotesData?.callHistory && viewNotesData.callHistory.length > 0 && (
-            <>
-              <Typography variant="subtitle2" gutterBottom>Call History ({viewNotesData.callHistory.length}):</Typography>
-              <Box maxHeight={200} overflow="auto">
-                {viewNotesData.callHistory.map((call, index) => (
-                  <Box key={index} mb={1} p={2} bgcolor="#f3e5f5" borderRadius={1}>
-                    <Typography variant="caption" color="primary">
-                      Call #{index + 1} - {moment(call.date).format('DD/MM/YYYY hh:mm A')}
-                    </Typography>
-                    <Typography variant="body2" style={{ marginTop: 4 }}>
-                      {call.notes}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setNotesViewDialog(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Call Notes Dialog */}
-      <Dialog open={callNotesDialog} onClose={() => setCallNotesDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          Add Call Notes - {selectedFollowUp?.customerName}
-        </DialogTitle>
-        <DialogContent>
-          <Box mb={2}>
-            <Typography variant="subtitle2">Reason:</Typography>
-            <Typography variant="body2" color="textSecondary">
-              {selectedFollowUp?.reason || 'No reason specified'}
+      {/* Follow-up Lists */}
+      <Box>
+        {tabValue === 0 && (
+          <Box>
+            <Typography variant="h6" gutterBottom color="error">
+              Overdue Follow-ups ({overdue.length})
             </Typography>
+            {overdue.length === 0 ? (
+              <Alert severity="success">No overdue follow-ups!</Alert>
+            ) : (
+              overdue.map(followUp => renderFollowUpCard(followUp, 'overdue'))
+            )}
           </Box>
+        )}
+
+        {tabValue === 1 && (
+          <Box>
+            <Typography variant="h6" gutterBottom color="warning.main">
+              Today's Follow-ups ({todayFollowUps.length})
+            </Typography>
+            {todayFollowUps.length === 0 ? (
+              <Alert severity="info">No follow-ups scheduled for today!</Alert>
+            ) : (
+              todayFollowUps.map(followUp => renderFollowUpCard(followUp, 'today'))
+            )}
+          </Box>
+        )}
+
+        {tabValue === 2 && (
+          <Box>
+            <Typography variant="h6" gutterBottom color="success.main">
+              Upcoming Follow-ups ({upcoming.length})
+            </Typography>
+            {upcoming.length === 0 ? (
+              <Alert severity="info">No upcoming follow-ups scheduled!</Alert>
+            ) : (
+              upcoming.map(followUp => renderFollowUpCard(followUp, 'upcoming'))
+            )}
+          </Box>
+        )}
+
+        {tabValue === 3 && (
+          <Box>
+            <Typography variant="h6" gutterBottom>
+              Completed Follow-ups ({completed.length})
+            </Typography>
+            {completed.length === 0 ? (
+              <Alert severity="info">No completed follow-ups yet!</Alert>
+            ) : (
+              completed.map(followUp => renderFollowUpCard(followUp, 'completed'))
+            )}
+          </Box>
+        )}
+      </Box>
+
+      {/* Next Follow-up Dialog */}
+      <Dialog open={nextFollowUpDialog} onClose={() => setNextFollowUpDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Reschedule Follow-up - {selectedFollowUp?.customerName}</DialogTitle>
+        <DialogContent>
           <TextField
             fullWidth
             multiline
-            rows={4}
-            label="Call Notes"
-            value={callNotes}
-            onChange={(e) => setCallNotes(e.target.value)}
-            placeholder="What happened in this follow-up call?"
+            rows={2}
+            label="Reason for Follow-up *"
+            value={nextFollowUp.reason}
+            onChange={(e) => setNextFollowUp(prev => ({ ...prev, reason: e.target.value }))}
             margin="normal"
-            disabled={submitting}
+            placeholder="Why scheduling follow-up?"
           />
+
+          <TextField
+            fullWidth
+            multiline
+            rows={2}
+            label="Notes *"
+            value={nextFollowUp.notes}
+            onChange={(e) => setNextFollowUp(prev => ({ ...prev, notes: e.target.value }))}
+            margin="normal"
+            placeholder="Additional information"
+          />
+
+          <Box display="flex" gap={2} mt={2}>
+            <TextField
+              type="date"
+              label="Follow-up Date *"
+              value={nextFollowUp.followUpDate}
+              onChange={(e) => setNextFollowUp(prev => ({ ...prev, followUpDate: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+            />
+            
+            <TextField
+              type="time"
+              label="Follow-up Time *"
+              value={nextFollowUp.followUpTime}
+              onChange={(e) => setNextFollowUp(prev => ({ ...prev, followUpTime: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+            />
+          </Box>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Priority</InputLabel>
+            <Select
+              value={nextFollowUp.priority}
+              onChange={(e) => setNextFollowUp(prev => ({ ...prev, priority: e.target.value }))}
+            >
+              <MenuItem value="low">Low</MenuItem>
+              <MenuItem value="medium">Medium</MenuItem>
+              <MenuItem value="high">High</MenuItem>
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCallNotesDialog(false)} disabled={submitting}>
+          <Button onClick={() => setNextFollowUpDialog(false)} disabled={submitting}>
             Cancel
           </Button>
           <Button 
-            onClick={addCallNotes} 
+            onClick={handleNextFollowUpSubmit} 
             variant="contained" 
-            disabled={!callNotes.trim() || submitting}
-            startIcon={submitting ? <CircularProgress size={16} /> : null}
+            color="primary"
+            disabled={submitting}
           >
-            {submitting ? 'Saving...' : 'Save Notes'}
+            {submitting ? <CircularProgress size={20} /> : 'Update Follow-up'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {loading && (
+        <Box 
+          position="fixed" 
+          top="50%" 
+          left="50%" 
+          style={{ transform: 'translate(-50%, -50%)', zIndex: 9999 }}
+        >
+          <CircularProgress />
+        </Box>
+      )}
     </Container>
   );
 };

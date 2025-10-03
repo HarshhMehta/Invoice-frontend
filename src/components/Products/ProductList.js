@@ -47,7 +47,7 @@ const TallyStockDashboard = () => {
   const [uploadingImages, setUploadingImages] = useState(false)
   const [itemImages, setItemImages] = useState({})
 
-  const API_BASE = "https://invoice-56iv.onrender.com/api/tally"
+  const API_BASE = "http://localhost:8000/api/tally"
 
   const checkConnection = async () => {
     try {
@@ -945,7 +945,7 @@ const TallyStockDashboard = () => {
                   {itemImages[selectedItem.id].map((image, index) => (
                     <div key={index} className="relative group">
                       <img
-                        src={`https://invoice-56iv.onrender.com${image.url}`}
+                        src={`http://localhost:8000${image.url}`}
                         alt={`Product image ${index + 1}`}
                         className="w-full h-32 object-cover rounded-lg border"
                       />

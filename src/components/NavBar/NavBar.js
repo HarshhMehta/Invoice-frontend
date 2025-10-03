@@ -53,6 +53,29 @@ const NavBar = () => {
         <span className="link-text">Customers</span>
       </a>
     </li>
+    <li className="nav-item">
+  <a href="/cashbook" className="nav-link flex items-center gap-2">
+    {/* Ledger / Cashbook icon */}
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="feather feather-book-ledger"
+    >
+      <path d="M4 2H16a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+      <line x1="4" y1="6" x2="16" y2="6" />
+      <line x1="8" y1="10" x2="14" y2="10" />
+      <line x1="8" y1="14" x2="14" y2="14" />
+    </svg>
+    <span className="link-text">Cashbook</span>
+  </a>
+</li>
     {/* <li className="nav-item">
       <a href="#" className="nav-link">
         <svg aria-hidden="true" focusable="false" data-prefix="fad" data-icon="space-shuttle" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" className="svg-inline--fa fa-space-shuttle fa-w-20 fa-5x">
