@@ -60,7 +60,7 @@ const useStyles = makeStyles(theme => ({
 }));
 
 // Updated API Service - Simplified without auth requirements
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://backend.dotcomwebs.shop';
 
 const followUpAPI = {
   getHeaders: () => {

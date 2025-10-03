@@ -89,7 +89,7 @@ const Clients = ({ setOpen, setCurrentId, clients }) => {
   const fetchDatabaseClients = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:8000/clients/all?databaseOnly=true');
+      const response = await fetch('https://backend.dotcomwebs.shop/clients/all?databaseOnly=true');
       const data = await response.json();
       
       if (data.success) {
@@ -123,7 +123,7 @@ const Clients = ({ setOpen, setCurrentId, clients }) => {
       setRefreshing(true);
       
       // Try to get live data from Tally directly
-      const response = await fetch('http://localhost:8000/clients/tally/live');
+      const response = await fetch('https://backend.dotcomwebs.shop/clients/tally/live');
       const data = await response.json();
       
       if (data.success && !data.data.fallback) {
@@ -166,7 +166,7 @@ const Clients = ({ setOpen, setCurrentId, clients }) => {
   const handleManualSync = async () => {
     try {
       setSyncing(true);
-      const response = await fetch('http://localhost:8000/clients/sync-tally', {
+      const response = await fetch('https://backend.dotcomwebs.shop/clients/sync-tally', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -59,7 +59,7 @@ const TallyStockDashboard = () => {
   const [fieldUpdates, setFieldUpdates] = useState({ grandGroup: "", warranty: "" })
   const [updatingFields, setUpdatingFields] = useState(false)
 
-  const API_BASE = "http://localhost:8000/api/tally"
+  const API_BASE = "https://backend.dotcomwebs.shop/api/tally"
 
   // Memoized helper functions
   const formatValue = useCallback((value) => {
@@ -1270,7 +1270,7 @@ const TallyStockDashboard = () => {
                   {itemImages[selectedItem.id].map((image, index) => (
                     <div key={index} className="relative group">
                       <img
-                        src={`http://localhost:8000${image.url}`}
+                        src={`https://backend.dotcomwebs.shop${image.url}`}
                         alt={`Product image ${index + 1}`}
                         className="w-full h-32 object-cover rounded-lg border"
                       />

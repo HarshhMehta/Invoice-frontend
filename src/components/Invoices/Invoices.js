@@ -111,7 +111,7 @@ const tableStyle = { width: 160, fontSize: 14, cursor: 'pointer', borderBottom: 
 const headerStyle = { borderBottom: 'none', textAlign: 'center'}
 
 // API Service for follow-ups
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://backend.dotcomwebs.shop';
 
 const followUpAPI = {
   getHeaders: () => {

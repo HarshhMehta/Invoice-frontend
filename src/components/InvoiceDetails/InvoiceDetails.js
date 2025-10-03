@@ -107,7 +107,7 @@ const InvoiceDetails = () => {
     }
 
     if (trimmedUrl.startsWith("/")) {
-      const API_BASE_URL = process.env.REACT_APP_API || "http://localhost:8000"
+      const API_BASE_URL = process.env.REACT_APP_API || "https://backend.dotcomwebs.shop"
       return `${API_BASE_URL}${trimmedUrl}`
     }
 

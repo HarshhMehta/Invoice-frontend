@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Minus, DollarSign, Calendar, Receipt, Trash2, Edit3, Save, X, Filter, Search, RefreshCw, AlertCircle, Settings } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000/api/cashbook'; // Change this to your server URL
+const API_BASE_URL = 'https://backend.dotcomwebs.shop/api/cashbook'; // Change this to your server URL
 
 const CashBookSystem = () => {
   const [transactions, setTransactions] = useState([]);
